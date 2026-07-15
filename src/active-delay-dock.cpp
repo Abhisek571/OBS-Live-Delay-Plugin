@@ -1,16 +1,17 @@
 #include "active-delay-dock.hpp"
 #include "active-delay-output.hpp"
 #include "delayed-output-watchdog.hpp"
+#include "obs-packet-copy.hpp"
 
 extern "C" {
 #include <obs-frontend-api.h>
 #include <obs-module.h>
+#include <util/config-file.h>
 }
 
 #include <QComboBox>
 #include <QFormLayout>
 #include <QLabel>
-#include <QMessageBox>
 #include <QPushButton>
 #include <QSpinBox>
 #include <QTimer>
@@ -27,6 +28,53 @@ constexpr int kHandoffSettleDelayMs = 150;
 constexpr int kHandoffRetryDelayMs = 250;
 constexpr int kNormalRestartDelayMs = 150;
 constexpr int kMaxEncoderStartAttempts = 3;
+
+bool encoder_matches(const char *id, obs_encoder_type type, const char *codec)
+{
+	const auto *actual_codec = id ? obs_get_encoder_codec(id) : nullptr;
+	return actual_codec && obs_get_encoder_type(id) == type && std::strcmp(actual_codec, codec) == 0;
+}
+
+const char *first_matching_encoder(obs_encoder_type type, const char *codec)
+{
+	const char *id = nullptr;
+	for (std::size_t index = 0; obs_enum_encoder_types(index, &id); ++index) {
+		if (encoder_matches(id, type, codec))
+			return id;
+	}
+	return nullptr;
+}
+
+const char *simple_h264_encoder(const char *selection)
+{
+	if (!selection)
+		return nullptr;
+	if (std::strcmp(selection, "nvenc") == 0) {
+		if (encoder_matches("obs_nvenc_h264_tex", OBS_ENCODER_VIDEO, "h264"))
+			return "obs_nvenc_h264_tex";
+		if (encoder_matches("ffmpeg_nvenc", OBS_ENCODER_VIDEO, "h264"))
+			return "ffmpeg_nvenc";
+		return nullptr;
+	}
+	if (std::strcmp(selection, "qsv") == 0)
+		return encoder_matches("obs_qsv11_v2", OBS_ENCODER_VIDEO, "h264") ? "obs_qsv11_v2" : nullptr;
+	if (std::strcmp(selection, "amd") == 0)
+		return encoder_matches("h264_texture_amf", OBS_ENCODER_VIDEO, "h264") ? "h264_texture_amf" : nullptr;
+	if (std::strcmp(selection, "x264") == 0 || std::strcmp(selection, "x264_lowcpu") == 0)
+		return encoder_matches("obs_x264", OBS_ENCODER_VIDEO, "h264") ? "obs_x264" : nullptr;
+	return encoder_matches(selection, OBS_ENCODER_VIDEO, "h264") ? selection : nullptr;
+}
+
+const char *simple_preset_key(const char *selection)
+{
+	if (std::strcmp(selection, "nvenc") == 0)
+		return "NVENCPreset2";
+	if (std::strcmp(selection, "qsv") == 0)
+		return "QSVPreset";
+	if (std::strcmp(selection, "amd") == 0)
+		return "AMDPreset";
+	return "Preset";
+}
 
 QString state_text(DelayState state)
 {
@@ -122,35 +170,13 @@ void ActiveDelayDock::enable_delay()
 		return;
 	}
 
-	if (!obs_frontend_streaming_active()) {
+	if (obs_frontend_streaming_active()) {
 		persistent_output_error_ =
-			"Start Delayed Output first, or start normal OBS streaming and then enable the delay";
-		return;
+			"Normal OBS streaming cannot be switched without ending the Twitch broadcast. Stop it, then use "
+			"Start Delayed Output before going live";
+	} else {
+		persistent_output_error_ = "Start Delayed Output before enabling the delay";
 	}
-
-	const auto answer = QMessageBox::question(
-		this, "Switch to Active Live Delay",
-		"OBS will keep the current stream connected while the delay buffer builds, then briefly reconnect "
-		"through Active Live Delay. Continue?");
-	if (answer != QMessageBox::Yes)
-		return;
-
-	QString preparation_error;
-	if (!prepare_normal_capture(preparation_error)) {
-		persistent_output_error_ = preparation_error;
-		return;
-	}
-
-	session_->controller.return_live();
-	if (!session_->controller.set_target(target, &error)) {
-		detach_normal_capture();
-		release_normal_output();
-		status_->setText(QString::fromStdString(error));
-		return;
-	}
-	output_flow_state_ = OutputFlowState::CapturingNormal;
-	persistent_output_error_.clear();
-	switch_to_holding_scene();
 }
 
 void ActiveDelayDock::return_live()
@@ -300,6 +326,20 @@ bool ActiveDelayDock::start_delayed_output_from(obs_output_t *source, bool prese
 		error = "No OBS streaming service is configured";
 		return false;
 	}
+	return start_delayed_output_with(video_encoder, audio_encoder, service, preserve_delay, true, error);
+}
+
+bool ActiveDelayDock::start_delayed_output_with(obs_encoder_t *video_encoder, obs_encoder_t *audio_encoder,
+	obs_service_t *service, bool preserve_delay, bool detach_encoder_group, QString &error)
+{
+	if (!video_encoder || !audio_encoder) {
+		error = "The delayed output needs H.264 video and AAC audio encoders";
+		return false;
+	}
+	if (!service) {
+		error = "No OBS streaming service is configured";
+		return false;
+	}
 
 	// Twitch Enhanced Broadcasting synchronizes all of its video renditions
 	// through one encoder group. Reusing only rendition 0 while it is still in
@@ -309,11 +349,12 @@ bool ActiveDelayDock::start_delayed_output_from(obs_output_t *source, bool prese
 	// encoder from the now-inactive multitrack group. A false result means OBS
 	// is still completing group teardown and the bounded handoff retry should
 	// run instead.
-	if (!obs_encoder_set_group(video_encoder, nullptr)) {
+	if (detach_encoder_group && !obs_encoder_set_group(video_encoder, nullptr)) {
 		error = "The Twitch multitrack video encoder group is still stopping";
 		return false;
 	}
-	blog(LOG_INFO, "[active-live-delay] Primary video encoder detached from any multitrack encoder group");
+	if (detach_encoder_group)
+		blog(LOG_INFO, "[active-live-delay] Primary video encoder detached from any multitrack encoder group");
 
 	auto *output = obs_output_create("active_delay_rtmp_output", "active_delay_stream", nullptr, nullptr);
 	if (!output) {
@@ -344,6 +385,94 @@ bool ActiveDelayDock::start_delayed_output_from(obs_output_t *source, bool prese
 	persistent_output_error_.clear();
 	blog(LOG_INFO, "[active-live-delay] Delayed RTMP output started successfully");
 	return true;
+}
+
+bool ActiveDelayDock::start_delayed_output_direct(QString &error)
+{
+	auto *profile = obs_frontend_get_profile_config();
+	if (!profile) {
+		error = "OBS did not expose the active output profile";
+		return false;
+	}
+	const auto *mode = config_get_string(profile, "Output", "Mode");
+	if (!mode || std::strcmp(mode, "Simple") != 0) {
+		error = "Direct delayed output currently requires OBS Output Mode: Simple";
+		return false;
+	}
+
+	auto *service = obs_frontend_get_streaming_service();
+	if (!service) {
+		error = "No OBS streaming service is configured";
+		return false;
+	}
+	const auto *video_selection = config_get_string(profile, "SimpleOutput", "StreamEncoder");
+	const auto *audio_selection = config_get_string(profile, "SimpleOutput", "StreamAudioEncoder");
+	const auto *video_id = simple_h264_encoder(video_selection);
+	if (!video_id) {
+		error = "The selected Simple Output video encoder is not an available H.264 encoder";
+		return false;
+	}
+	if (!audio_selection || std::strcmp(audio_selection, "aac") != 0) {
+		error = "Direct delayed output requires AAC in OBS Simple Output settings";
+		return false;
+	}
+	const char *audio_id = encoder_matches("ffmpeg_aac", OBS_ENCODER_AUDIO, "aac")
+		? "ffmpeg_aac"
+		: first_matching_encoder(OBS_ENCODER_AUDIO, "aac");
+	if (!audio_id) {
+		error = "No AAC encoder is available in OBS";
+		return false;
+	}
+
+	auto *video_settings = obs_data_create();
+	auto *audio_settings = obs_data_create();
+	if (!video_settings || !audio_settings) {
+		obs_data_release(video_settings);
+		obs_data_release(audio_settings);
+		error = "OBS could not allocate direct-output encoder settings";
+		return false;
+	}
+	const auto video_bitrate = config_get_uint(profile, "SimpleOutput", "VBitrate");
+	const auto audio_bitrate = config_get_uint(profile, "SimpleOutput", "ABitrate");
+	const auto *preset_key = simple_preset_key(video_selection);
+	const auto *preset = config_get_string(profile, "SimpleOutput", preset_key);
+	obs_data_set_string(video_settings,
+		std::strncmp(video_id, "ffmpeg_", 7) == 0 && std::strcmp(preset_key, "NVENCPreset2") == 0
+			? "preset2"
+			: "preset",
+		preset ? preset : "");
+	obs_data_set_string(video_settings, "rate_control", "CBR");
+	obs_data_set_int(video_settings, "bitrate", static_cast<long long>(video_bitrate));
+	if (config_get_bool(profile, "SimpleOutput", "UseAdvanced")) {
+		const auto *custom = config_get_string(profile, "SimpleOutput", "x264Settings");
+		obs_data_set_string(video_settings, "x264opts", custom ? custom : "");
+	}
+	obs_data_set_string(audio_settings, "rate_control", "CBR");
+	obs_data_set_int(audio_settings, "bitrate", static_cast<long long>(audio_bitrate));
+	obs_service_apply_encoder_settings(service, video_settings, audio_settings);
+	if (config_get_bool(profile, "Stream1", "IgnoreRecommended")) {
+		obs_data_set_int(video_settings, "bitrate", static_cast<long long>(video_bitrate));
+		obs_data_set_int(audio_settings, "bitrate", static_cast<long long>(audio_bitrate));
+	}
+
+	auto *video_encoder = obs_video_encoder_create(video_id, "active_delay_direct_video", video_settings, nullptr);
+	auto *audio_encoder = obs_audio_encoder_create(audio_id, "active_delay_direct_audio", audio_settings, 0, nullptr);
+	obs_data_release(video_settings);
+	obs_data_release(audio_settings);
+	if (!video_encoder || !audio_encoder) {
+		obs_encoder_release(video_encoder);
+		obs_encoder_release(audio_encoder);
+		error = "OBS could not create the direct H.264/AAC streaming encoders";
+		return false;
+	}
+	obs_encoder_set_video(video_encoder, obs_get_video());
+	obs_encoder_set_audio(audio_encoder, obs_get_audio());
+	const auto started = start_delayed_output_with(video_encoder, audio_encoder, service, false, false, error);
+	obs_encoder_release(video_encoder);
+	obs_encoder_release(audio_encoder);
+	if (started)
+		blog(LOG_INFO, "[active-live-delay] Direct delayed output started without a normal OBS-stream handoff");
+	return started;
 }
 
 void ActiveDelayDock::complete_delayed_handoff()
@@ -448,7 +577,7 @@ void ActiveDelayDock::start_delayed_output()
 	}
 	if (obs_frontend_streaming_active()) {
 		persistent_output_error_ =
-			"Normal OBS streaming is active; use Enable / Set Delay to build and hand off safely";
+			"Stop normal OBS streaming first; Twitch ends the broadcast during a handoff";
 		return;
 	}
 
@@ -456,12 +585,9 @@ void ActiveDelayDock::start_delayed_output()
 		obs_output_release(delayed_output_);
 		delayed_output_ = nullptr;
 	}
-	auto *source = obs_frontend_get_streaming_output();
 	QString error;
-	if (!start_delayed_output_from(source, false, error))
+	if (!start_delayed_output_direct(error))
 		persistent_output_error_ = error;
-	if (source)
-		obs_output_release(source);
 }
 
 void ActiveDelayDock::stop_delayed_output()
