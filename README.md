@@ -1,8 +1,8 @@
 # OBS Live Delay Plugin
 
-<h1 align="center"><span style="color: red;"><strong>🛑 WARNING: NOT PRODUCTION-READY 🛑</strong></span></h1>
+<h1 align="center"><span style="color: red;"><strong> WARNING: NOT PRODUCTION-READY </strong></span></h1>
 
-<h2 align="center"><span style="color: red;"><strong>Genuine delayed OBS encoder-to-RTMP playback has not been verified. Do not use this beta for a live production broadcast.</strong></span></h2>
+<h2 align="center"><span style="color: red;"><strong>Genuine delayed OBS encoder-to-RTMP playback has not been verified. Do not use this beta for a live production broadcast. Not working as of v0.1.32 see issues </strong></span></h2>
 
 ## Beta
 
