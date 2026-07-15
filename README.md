@@ -1,5 +1,9 @@
 # OBS Live Delay Plugin
 
+<h1 align="center"><span style="color: red;"><strong>🛑 WARNING: NOT PRODUCTION-READY 🛑</strong></span></h1>
+
+<h2 align="center"><span style="color: red;"><strong>Genuine OBS encoder-to-RTMP playback has not been verified. Beta.2 also has known dock lifecycle regressions that can make the dock unavailable after it is closed and can crash OBS during shutdown. Do not use it for a live production broadcast.</strong></span></h2>
+
 ## Beta
 
 This is an early beta of an OBS plugin for adding a delay after you are already live. While the delay is building or changing, OBS shows a holding scene. Once the delayed feed is ready, it switches back, giving you time to adjust the delay without taking the stream offline.
