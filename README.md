@@ -4,7 +4,7 @@
   <img src="docs/production-warning.svg" width="100%" alt="Beta warning: v0.1.39 uses the direct-start workflow. Start and stop streaming from the plugin dock, not OBS's normal Start Streaming button. Test before production use.">
 </p>
 
-## Beta 5.1
+## v0.1.39 (Beta)
 
 Active Live Delay lets you add, change, remove, or reduce a stream delay from
 an OBS dock. It is still beta software: use a non-critical test stream before
