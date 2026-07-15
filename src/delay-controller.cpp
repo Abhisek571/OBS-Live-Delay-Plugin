@@ -89,6 +89,10 @@ void DelayController::ingest(EncodedPacket packet)
 		ready_.push_back(std::move(packet));
 		return;
 	}
+	if (!buffered_.empty() && packet.dts_us < buffered_.back().dts_us) {
+		set_error_locked("Encoder packet timestamps moved backwards");
+		return;
+	}
 
 	buffered_bytes_ += packet.payload.size();
 	buffered_.push_back(std::move(packet));

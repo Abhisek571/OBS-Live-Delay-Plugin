@@ -1,27 +1,36 @@
 # OBS Live Delay Plugin
 
-An OBS plugin for putting a delay on a stream after you have already gone live.
+## Beta
 
-It switches to a holding scene while the delay is building or changing, then switches back when the delayed feed is ready. That gives a stream time to alter delay without stopping the stream.
+This is an early beta of an OBS plugin for adding a delay after you are already live. While the delay is building or changing, OBS shows a holding scene. Once the delayed feed is ready, it switches back, giving you time to adjust the delay without taking the stream offline.
 
-## Where it is now
+The dock, hotkeys, holding-scene controls, packet buffer, and delay controller are working. The plugin also builds against OBS 32.
 
-This is early work, not a ready-to-install streaming plugin yet.
+It does not send a stream yet. RTMP/FLV delivery is still being built, so this beta is for development and testing—not live production use.
 
-The packet buffer, delay state changes, dock, holding-scene switching, hotkeys, and OBS output wrapper are in place. The RTMP/FLV sender still needs to be built, so the plugin will not start a real stream yet.
+## What is here
 
-## Building it
+- Set or change the target delay from the dock
+- Return to live and clear the delay buffer
+- Switch to a holding scene while the delay is building
+- Use hotkeys for delay, return live, and emergency dump
+- Keep delayed playback on a video keyframe
+- Stop safely when packet timestamps are invalid or the buffer reaches its limit
 
-You need the OBS development build, Qt 6, CMake, and Microsoft C++ Build Tools. The current project uses CMake:
+## Build it
+
+You need an OBS development build, Qt 6, CMake, and the Microsoft C++ Build Tools.
+
+To run the fast core tests without OBS or Qt:
 
 ```powershell
-cmake -S . -B build -DACTIVE_DELAY_BUILD_TESTS=ON
-cmake --build build --config Release
-ctest --test-dir build -C Release
+cmake -S . -B build-core -DACTIVE_DELAY_BUILD_PLUGIN=OFF -DACTIVE_DELAY_BUILD_TESTS=ON
+cmake --build build-core --config Release
+ctest --test-dir build-core -C Release --output-on-failure
 ```
 
-## Installing a future release
+Building the DLL also needs the OBS development libraries available through `CMAKE_PREFIX_PATH`.
 
-When releases are available, close OBS and extract the ZIP into its install folder. Open the plugin from **Docks → OBS Active Live Delay**.
+## Status
 
-The first version will start and stop the managed stream from the plugin dock, rather than OBS's normal **Start Streaming** button.
+The next piece of work is RTMP/FLV muxing and a sender thread. Until that is in place, the plugin deliberately refuses to start an output rather than pretending to stream.

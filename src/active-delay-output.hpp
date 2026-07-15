@@ -1,6 +1,8 @@
 #pragma once
 
-#include "delay-controller.hpp"
+#include "active-delay-session.hpp"
+
+#include <memory>
 
 extern "C" {
 #include <obs-module.h>
@@ -8,8 +10,6 @@ extern "C" {
 
 namespace active_delay {
 
-// Registers an encoded H.264/AAC output. The output owns packet buffering;
-// RTMP/FLV delivery is intentionally injected behind this boundary.
-void register_active_delay_output();
+void register_active_delay_output(std::shared_ptr<ActiveDelaySession> session);
 
 } // namespace active_delay

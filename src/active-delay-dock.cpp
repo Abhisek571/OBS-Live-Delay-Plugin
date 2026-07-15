@@ -15,6 +15,7 @@ extern "C" {
 #include <QWidget>
 
 #include <chrono>
+#include <utility>
 
 namespace active_delay {
 namespace {
@@ -32,7 +33,8 @@ QString state_text(DelayState state)
 
 } // namespace
 
-ActiveDelayDock::ActiveDelayDock(QWidget *parent) : QDockWidget("OBS Active Live Delay", parent)
+ActiveDelayDock::ActiveDelayDock(std::shared_ptr<ActiveDelaySession> session, QWidget *parent)
+	: QDockWidget("OBS Active Live Delay", parent), session_(std::move(session))
 {
 	auto *content = new QWidget(this);
 	auto *layout = new QVBoxLayout(content);
@@ -81,7 +83,7 @@ ActiveDelayDock::~ActiveDelayDock()
 void ActiveDelayDock::enable_delay()
 {
 	std::string error;
-	if (!controller_.set_target(std::chrono::seconds(target_seconds_->value()), &error)) {
+	if (!session_->controller.set_target(std::chrono::seconds(target_seconds_->value()), &error)) {
 		status_->setText(QString::fromStdString(error));
 		return;
 	}
@@ -90,14 +92,14 @@ void ActiveDelayDock::enable_delay()
 
 void ActiveDelayDock::return_live()
 {
-	controller_.return_live();
+	session_->controller.return_live();
 	restore_program_scene();
 }
 
 void ActiveDelayDock::emergency_dump()
 {
 	std::string error;
-	if (!controller_.emergency_dump(std::chrono::seconds(dump_seconds_->value()), &error))
+	if (!session_->controller.emergency_dump(std::chrono::seconds(dump_seconds_->value()), &error))
 		status_->setText(QString::fromStdString(error));
 }
 
@@ -113,7 +115,7 @@ void ActiveDelayDock::refresh_scenes()
 
 void ActiveDelayDock::refresh_status()
 {
-	const auto value = controller_.status();
+	const auto value = session_->controller.status();
 	status_->setText(state_text(value.state));
 	current_delay_->setText(QString::number(value.current_delay.count() / 1'000'000.0, 'f', 1) + " sec");
 	if (value.state == DelayState::Error && !value.error.empty())

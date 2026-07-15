@@ -1,6 +1,8 @@
 #include "active-delay-dock.hpp"
 #include "active-delay-output.hpp"
 
+#include <memory>
+
 extern "C" {
 #include <obs-frontend-api.h>
 #include <obs-module.h>
@@ -11,6 +13,7 @@ OBS_MODULE_USE_DEFAULT_LOCALE("obs-active-live-delay", "en-US")
 
 namespace {
 active_delay::ActiveDelayDock *dock = nullptr;
+std::shared_ptr<active_delay::ActiveDelaySession> session;
 obs_hotkey_id enable_hotkey = OBS_INVALID_HOTKEY_ID;
 obs_hotkey_id return_live_hotkey = OBS_INVALID_HOTKEY_ID;
 obs_hotkey_id dump_hotkey = OBS_INVALID_HOTKEY_ID;
@@ -36,8 +39,9 @@ void dump_hotkey_callback(void *, obs_hotkey_id, obs_hotkey_t *, bool pressed)
 
 bool obs_module_load(void)
 {
-	active_delay::register_active_delay_output();
-	dock = new active_delay::ActiveDelayDock();
+	session = std::make_shared<active_delay::ActiveDelaySession>();
+	active_delay::register_active_delay_output(session);
+	dock = new active_delay::ActiveDelayDock(session);
 	obs_frontend_add_custom_qdock("active_delay_dock", dock);
 	enable_hotkey = obs_hotkey_register_frontend("active_delay_enable", "Active Delay: Enable / Set Delay", enable_hotkey_callback, nullptr);
 	return_live_hotkey = obs_hotkey_register_frontend("active_delay_return_live", "Active Delay: Return Live", return_live_hotkey_callback, nullptr);
@@ -50,4 +54,5 @@ void obs_module_unload()
 	obs_frontend_remove_dock("active_delay_dock");
 	delete dock;
 	dock = nullptr;
+	session.reset();
 }
