@@ -115,4 +115,4 @@ OBS Studio, libobs, FFmpeg, Qt, and other third-party components retain their ow
 
 ## Status
 
-The direct-start OBS-to-Twitch path has an initial successful user report from the v0.1.38/v0.1.39 implementation, and all five automated test targets pass. Keep [issue #4](https://github.com/Abhisek571/OBS-Live-Delay-Plugin/issues/4) open until the delayed feed, A/V sync, Return Live, Emergency Dump, reconnect, and full lifecycle have recorded acceptance results.
+The direct-start OBS-to-Twitch path has an initial successful user report from the v0.1.38/v0.1.39 implementation, and all five automated test targets pass. Track [issue #5](https://github.com/Abhisek571/OBS-Live-Delay-Plugin/issues/5) until the delayed feed, A/V sync, Return Live, Emergency Dump, reconnect, and full lifecycle have recorded acceptance results.
