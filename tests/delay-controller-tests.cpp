@@ -113,6 +113,24 @@ void emergency_dump_requires_a_delayed_stream()
 	require(controller.emergency_dump(1s, &error), "safe dump should be accepted");
 	require(controller.status().target_delay == 1s, "dump should lower the target delay");
 }
+
+void continues_after_a_forward_timestamp_gap()
+{
+	DelayController controller;
+	require(controller.set_target(2s), "delay should be accepted");
+	controller.ingest(video(0, true));
+	controller.ingest(video(1'000'000, true));
+	controller.ingest(video(2'000'000, true));
+	require(controller.status().state == DelayState::Delayed, "delay should be active before handoff");
+
+	controller.ingest(video(3'000'000, true));
+	require(!controller.take_ready_packets().empty(), "pre-handoff delayed packets should be available");
+	controller.ingest(video(5'000'000, true));
+	const auto state = controller.status();
+	require(state.state == DelayState::Delayed, "a forward reconnect gap must preserve delayed state");
+	require(state.current_delay == 2s, "the controller should retain the configured delay after a gap");
+	require(!controller.take_ready_packets().empty(), "packets should continue releasing after a reconnect gap");
+}
 } // namespace
 
 int main()
@@ -125,6 +143,7 @@ int main()
 		enforces_the_memory_limit();
 		rejects_timestamp_regressions_while_buffering();
 		emergency_dump_requires_a_delayed_stream();
+		continues_after_a_forward_timestamp_gap();
 		std::cout << "delay-controller tests passed\n";
 	} catch (const std::exception &error) {
 		std::cerr << "delay-controller test failure: " << error.what() << '\n';

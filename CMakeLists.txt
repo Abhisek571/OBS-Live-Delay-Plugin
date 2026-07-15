@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.28)
 
-project(obs-active-live-delay VERSION 0.1.0 LANGUAGES CXX)
+project(obs-active-live-delay VERSION 0.1.32 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -76,6 +76,8 @@ if (ACTIVE_DELAY_BUILD_PLUGIN)
     install(TARGETS obs-active-live-delay
         LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}/obs-plugins"
         RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}/obs-plugins/64bit")
+    install(FILES data/obs-plugins/obs-active-live-delay/locale/en-US.ini
+        DESTINATION "data/obs-plugins/obs-active-live-delay/locale")
 endif()
 
 if (ACTIVE_DELAY_BUILD_TESTS)
