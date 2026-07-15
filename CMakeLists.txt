@@ -7,23 +7,62 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(ACTIVE_DELAY_BUILD_PLUGIN "Build the OBS/Qt plugin" ON)
+option(ACTIVE_DELAY_BUILD_TESTS "Build dependency-free core tests" ON)
+
+if (ACTIVE_DELAY_BUILD_PLUGIN OR ACTIVE_DELAY_BUILD_TESTS)
+    find_package(Threads REQUIRED)
+
+    add_library(active-delay-core STATIC
+        src/delay-controller.cpp
+        src/flv-muxer.cpp
+        src/bounded-sender-queue.cpp
+        src/rtmp-connection.cpp
+        src/rtmp-sender.cpp
+    )
+    target_include_directories(active-delay-core PUBLIC src)
+    target_link_libraries(active-delay-core PUBLIC Threads::Threads)
+    target_compile_options(active-delay-core PRIVATE
+        $<$<CXX_COMPILER_ID:MSVC>:/W4 /EHsc /permissive- /Zc:__cplusplus>
+        $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wall -Wextra -Wpedantic>
+    )
+    set_target_properties(active-delay-core PROPERTIES POSITION_INDEPENDENT_CODE ON)
+endif()
 
 if (ACTIVE_DELAY_BUILD_PLUGIN)
     find_package(libobs REQUIRED)
     find_package(obs-frontend-api REQUIRED)
     find_package(Qt6 REQUIRED COMPONENTS Widgets)
 
+    find_path(FFMPEG_INCLUDE_DIR NAMES libavformat/avio.h REQUIRED)
+    find_library(FFMPEG_AVFORMAT_LIBRARY NAMES avformat REQUIRED)
+    find_library(FFMPEG_AVUTIL_LIBRARY NAMES avutil REQUIRED)
+    if (NOT TARGET FFmpeg::avformat)
+        add_library(FFmpeg::avformat UNKNOWN IMPORTED)
+        set_target_properties(FFmpeg::avformat PROPERTIES
+            IMPORTED_LOCATION "${FFMPEG_AVFORMAT_LIBRARY}"
+            INTERFACE_INCLUDE_DIRECTORIES "${FFMPEG_INCLUDE_DIR}")
+    endif()
+    if (NOT TARGET FFmpeg::avutil)
+        add_library(FFmpeg::avutil UNKNOWN IMPORTED)
+        set_target_properties(FFmpeg::avutil PROPERTIES
+            IMPORTED_LOCATION "${FFMPEG_AVUTIL_LIBRARY}"
+            INTERFACE_INCLUDE_DIRECTORIES "${FFMPEG_INCLUDE_DIR}")
+    endif()
+
     add_library(obs-active-live-delay MODULE
         src/plugin-main.cpp
-        src/delay-controller.cpp
         src/active-delay-output.cpp
         src/active-delay-dock.cpp
+        src/ffmpeg-rtmp-connection.cpp
     )
 
     target_include_directories(obs-active-live-delay PRIVATE src)
     target_link_libraries(obs-active-live-delay PRIVATE
+        active-delay-core
         OBS::libobs
         OBS::obs-frontend-api
+        FFmpeg::avformat
+        FFmpeg::avutil
         Qt6::Widgets
     )
     target_compile_options(obs-active-live-delay PRIVATE
@@ -39,17 +78,19 @@ if (ACTIVE_DELAY_BUILD_PLUGIN)
         RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}/obs-plugins/64bit")
 endif()
 
-option(ACTIVE_DELAY_BUILD_TESTS "Build core delay-controller tests" ON)
 if (ACTIVE_DELAY_BUILD_TESTS)
     enable_testing()
     add_executable(active-delay-core-tests
         tests/delay-controller-tests.cpp
-        src/delay-controller.cpp
     )
-    target_include_directories(active-delay-core-tests PRIVATE src)
-    target_compile_options(active-delay-core-tests PRIVATE
-        $<$<CXX_COMPILER_ID:MSVC>:/W4 /EHsc /permissive- /Zc:__cplusplus>
-        $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wall -Wextra -Wpedantic>
-    )
+    target_link_libraries(active-delay-core-tests PRIVATE active-delay-core)
     add_test(NAME active-delay-core-tests COMMAND active-delay-core-tests)
+
+    add_executable(active-delay-flv-tests tests/flv-muxer-tests.cpp)
+    target_link_libraries(active-delay-flv-tests PRIVATE active-delay-core)
+    add_test(NAME active-delay-flv-tests COMMAND active-delay-flv-tests)
+
+    add_executable(active-delay-sender-tests tests/rtmp-sender-tests.cpp)
+    target_link_libraries(active-delay-sender-tests PRIVATE active-delay-core)
+    add_test(NAME active-delay-sender-tests COMMAND active-delay-sender-tests)
 endif()
