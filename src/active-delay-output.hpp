@@ -10,7 +10,6 @@ extern "C" {
 
 namespace active_delay {
 
-EncodedPacket copy_encoder_packet(const encoder_packet &packet);
 bool cache_active_codec_headers(obs_output_t *output, ActiveDelaySession &session, std::string &error);
 void clear_cached_codec_headers(ActiveDelaySession &session);
 void register_active_delay_output(std::shared_ptr<ActiveDelaySession> session);

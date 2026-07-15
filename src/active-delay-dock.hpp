@@ -44,6 +44,9 @@ private:
 	bool check_delayed_output_health();
 	void recover_from_delayed_output_failure(const QString &error);
 	bool start_delayed_output_from(obs_output_t *source, bool preserve_delay, QString &error);
+	bool start_delayed_output_with(obs_encoder_t *video_encoder, obs_encoder_t *audio_encoder,
+		obs_service_t *service, bool preserve_delay, bool detach_encoder_group, QString &error);
+	bool start_delayed_output_direct(QString &error);
 	bool prepare_normal_capture(QString &error);
 	void detach_normal_capture();
 	void release_normal_output();

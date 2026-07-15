@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.28)
 
-project(obs-active-live-delay VERSION 0.1.35 LANGUAGES CXX)
+project(obs-active-live-delay VERSION 0.1.38 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -55,6 +55,7 @@ if (ACTIVE_DELAY_BUILD_PLUGIN)
         src/active-delay-output.cpp
         src/active-delay-dock.cpp
         src/ffmpeg-rtmp-connection.cpp
+        src/obs-packet-copy.cpp
     )
 
     target_include_directories(obs-active-live-delay PRIVATE src)
@@ -102,4 +103,19 @@ if (ACTIVE_DELAY_BUILD_TESTS)
     add_executable(active-delay-output-watchdog-tests tests/delayed-output-watchdog-tests.cpp)
     target_link_libraries(active-delay-output-watchdog-tests PRIVATE active-delay-core)
     add_test(NAME active-delay-output-watchdog-tests COMMAND active-delay-output-watchdog-tests)
+
+    if (ACTIVE_DELAY_BUILD_PLUGIN)
+        add_executable(active-delay-obs-packet-tests
+            tests/obs-packet-copy-tests.cpp
+            src/obs-packet-copy.cpp)
+        target_include_directories(active-delay-obs-packet-tests PRIVATE src)
+        target_link_libraries(active-delay-obs-packet-tests PRIVATE active-delay-core OBS::libobs)
+        add_test(NAME active-delay-obs-packet-tests COMMAND active-delay-obs-packet-tests)
+        get_filename_component(FFMPEG_PREFIX_DIR "${FFMPEG_INCLUDE_DIR}" DIRECTORY)
+        get_filename_component(OBS_BUILD_DIR "${libobs_DIR}" DIRECTORY)
+        set_property(TEST active-delay-obs-packet-tests PROPERTY ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:$<TARGET_FILE_DIR:OBS::libobs>"
+            "PATH=path_list_prepend:${OBS_BUILD_DIR}/rundir/$<CONFIG>/bin/64bit"
+            "PATH=path_list_prepend:${FFMPEG_PREFIX_DIR}/bin")
+    endif()
 endif()

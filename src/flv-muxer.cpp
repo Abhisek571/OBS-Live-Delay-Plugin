@@ -12,6 +12,34 @@ constexpr std::size_t kMaxFlvPayloadSize = 0x00ff'ffff;
 constexpr std::int64_t kMinCompositionTime = -0x0080'0000;
 constexpr std::int64_t kMaxCompositionTime = 0x007f'ffff;
 
+bool validate_avc_packet(const std::vector<std::uint8_t> &payload, std::string &error)
+{
+	if (payload.size() >= 3 && payload[0] == 0x00 && payload[1] == 0x00 &&
+		(payload[2] == 0x01 || (payload.size() >= 4 && payload[2] == 0x00 && payload[3] == 0x01))) {
+		error = "H.264 video packet is Annex-B instead of length-prefixed AVC";
+		return false;
+	}
+
+	std::size_t offset = 0;
+	while (offset < payload.size()) {
+		if (payload.size() - offset < 4) {
+			error = "H.264 AVC packet ends before its NAL-unit length field";
+			return false;
+		}
+		const auto nal_size = (static_cast<std::uint32_t>(payload[offset]) << 24) |
+			(static_cast<std::uint32_t>(payload[offset + 1]) << 16) |
+			(static_cast<std::uint32_t>(payload[offset + 2]) << 8) |
+			static_cast<std::uint32_t>(payload[offset + 3]);
+		offset += 4;
+		if (nal_size == 0 || nal_size > payload.size() - offset) {
+			error = "H.264 AVC packet contains an invalid NAL-unit length";
+			return false;
+		}
+		offset += nal_size;
+	}
+	return true;
+}
+
 void append_be24(std::vector<std::uint8_t> &output, std::uint32_t value)
 {
 	output.push_back(static_cast<std::uint8_t>((value >> 16) & 0xff));
@@ -82,6 +110,8 @@ bool FlvMuxer::mux(std::vector<EncodedPacket> packets, std::vector<FlvTag> &tags
 			error = "An encoded packet has an empty payload";
 			return false;
 		}
+		if (packet.kind == PacketKind::Video && !validate_avc_packet(packet.payload, error))
+			return false;
 		const auto framing_size = packet.kind == PacketKind::Video ? 5ULL : 2ULL;
 		if (packet.payload.size() > kMaxFlvPayloadSize - framing_size) {
 			error = "Encoded packet is too large for a single FLV tag";

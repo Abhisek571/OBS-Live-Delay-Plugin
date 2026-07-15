@@ -1,10 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 132" role="img" aria-labelledby="title description">
-  <title id="title">Warning: v0.1.35 still does not work</title>
-  <desc id="description">Delayed Twitch output has not completed a successful playback test. Do not use this beta for a live production broadcast. Track issue #4.</desc>
-  <rect x="3" y="3" width="1194" height="126" rx="12" fill="none" stroke="#ff4d4f" stroke-width="6"/>
-  <g fill="#ff4d4f" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-weight="700">
-    <text x="600" y="42" font-size="30">WARNING: v0.1.35 STILL DOES NOT WORK</text>
-    <text x="600" y="78" font-size="18">Delayed Twitch output has not completed a successful playback test.</text>
-    <text x="600" y="108" font-size="18">Do not use this beta for a live production broadcast. Track issue #4.</text>
+  <title id="title">Beta: v0.1.38 uses direct-start workflow only</title>
+  <desc id="description">Start and stop streaming from the Active Live Delay dock, not OBS's normal Start Streaming button. Test before production use.</desc>
+  <rect x="3" y="3" width="1194" height="126" rx="12" fill="none" stroke="#f5a623" stroke-width="6"/>
+  <g fill="#f5a623" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-weight="700">
+    <text x="600" y="42" font-size="30">BETA: v0.1.38 DIRECT-START WORKFLOW ONLY</text>
+    <text x="600" y="78" font-size="18">Start and stop streaming from the Active Live Delay dock.</text>
+    <text x="600" y="108" font-size="18">Do not use OBS Start Streaming. Test before production use.</text>
   </g>
 </svg>
