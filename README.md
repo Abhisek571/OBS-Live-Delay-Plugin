@@ -1,16 +1,18 @@
 # OBS Live Delay Plugin
 
 <p align="center">
-  <img src="docs/production-warning.svg" width="100%" alt="Warning: Not production-ready. Genuine delayed OBS encoder-to-RTMP playback has not been verified. Do not use this beta for a live production broadcast. v0.1.35 still requires runtime proof; see issue #4.">
+  <img src="docs/production-warning.svg" width="100%" alt="Warning: v0.1.35 still does not work. Delayed Twitch output has not completed a successful playback test. Do not use this beta for a live production broadcast. Track issue #4.">
 </p>
 
 ## Beta
 
 Version `v0.1.35` is Beta 4 of an OBS plugin for adding a delay after you are already live. While the delay is building or changing, OBS shows a holding scene. Once the delayed feed is ready, it switches back, giving you time to adjust the delay.
 
+**Important: the plugin still does not work as a complete delayed Twitch output.** No released version has completed a successful independently watched delayed-playback test. Treat v0.1.35 as non-working until [issue #4](https://github.com/Abhisek571/OBS-Live-Delay-Plugin/issues/4) is verified and closed.
+
 The dock, hotkeys, holding-scene controls, packet buffer, delay controller, FLV muxer, bounded sender queue, and RTMP connection layer are implemented. Beta 4 retains the completed dock/lifecycle and packet-capture work from [#1](https://github.com/Abhisek571/OBS-Live-Delay-Plugin/issues/1), [#2](https://github.com/Abhisek571/OBS-Live-Delay-Plugin/issues/2), and [#3](https://github.com/Abhisek571/OBS-Live-Delay-Plugin/issues/3). It adds restarted-encoder timestamp rebasing, zero-frame takeover detection, exactly-once normal-stream recovery, and detachment of Twitch's retained primary encoder from its inactive Enhanced Broadcasting synchronization group. Runtime playback verification remains tracked in [#4](https://github.com/Abhisek571/OBS-Live-Delay-Plugin/issues/4).
 
-The transport has published synthetic H.264/AAC FLV tags to a local RTMP server, but the complete OBS encoder-to-server path still needs end-to-end A/V validation. This beta remains for development and testing, not live production use.
+The transport has published synthetic H.264/AAC FLV tags to a local RTMP server, and automated tests pass, but the actual OBS-to-Twitch delayed-output path has not worked successfully. This beta remains for development and testing only, not live production use.
 
 ## What is here
 
