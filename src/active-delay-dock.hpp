@@ -2,6 +2,7 @@
 
 #include "active-delay-session.hpp"
 
+#include <chrono>
 #include <memory>
 
 extern "C" {
@@ -40,6 +41,8 @@ private:
 	void stop_delayed_output();
 	void complete_delayed_handoff();
 	void restart_normal_streaming();
+	bool check_delayed_output_health();
+	void recover_from_delayed_output_failure(const QString &error);
 	bool start_delayed_output_from(obs_output_t *source, bool preserve_delay, QString &error);
 	bool prepare_normal_capture(QString &error);
 	void detach_normal_capture();
@@ -70,7 +73,9 @@ private:
 	OutputFlowState output_flow_state_ = OutputFlowState::Stopped;
 	bool normal_packet_callback_attached_ = false;
 	bool shutting_down_ = false;
+	bool restart_normal_on_delayed_failure_ = false;
 	int handoff_start_attempts_ = 0;
+	std::chrono::steady_clock::time_point delayed_output_started_at_{};
 	QString persistent_output_error_;
 };
 

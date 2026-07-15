@@ -46,6 +46,7 @@ public:
 	void return_live();
 	bool emergency_dump(Microseconds duration, std::string *error = nullptr);
 	void reset_for_discontinuity(std::string_view reason);
+	void begin_timestamp_epoch();
 
 	void ingest(EncodedPacket packet);
 	std::vector<EncodedPacket> take_ready_packets();
@@ -55,6 +56,8 @@ private:
 	void promote_locked();
 	bool discard_to_next_keyframe_locked(bool allow_current = true);
 	bool trim_to_target_locked();
+	bool normalize_timestamp_locked(EncodedPacket &packet);
+	void reset_timestamp_tracking_locked();
 	[[nodiscard]] Microseconds duration_locked() const;
 	void set_error_locked(std::string message);
 
@@ -66,6 +69,9 @@ private:
 	DelayState state_ = DelayState::Live;
 	Microseconds target_delay_{};
 	std::string error_;
+	std::optional<std::int64_t> last_input_dts_us_;
+	std::optional<std::int64_t> timestamp_offset_us_;
+	bool rebase_next_timestamp_ = false;
 };
 
 } // namespace active_delay

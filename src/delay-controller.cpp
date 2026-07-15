@@ -1,10 +1,29 @@
 #include "delay-controller.hpp"
 
 #include <algorithm>
+#include <limits>
 
 namespace active_delay {
 namespace {
 constexpr Microseconds kNoDelay{};
+
+bool checked_add(std::int64_t left, std::int64_t right, std::int64_t &result)
+{
+	if ((right > 0 && left > std::numeric_limits<std::int64_t>::max() - right) ||
+	    (right < 0 && left < std::numeric_limits<std::int64_t>::min() - right))
+		return false;
+	result = left + right;
+	return true;
+}
+
+bool checked_subtract(std::int64_t left, std::int64_t right, std::int64_t &result)
+{
+	if ((right > 0 && left < std::numeric_limits<std::int64_t>::min() + right) ||
+	    (right < 0 && left > std::numeric_limits<std::int64_t>::max() + right))
+		return false;
+	result = left - right;
+	return true;
+}
 }
 
 DelayController::DelayController(BufferLimits limits) : limits_(limits) {}
@@ -25,6 +44,7 @@ bool DelayController::set_target(Microseconds target, std::string *error)
 		state_ = DelayState::ReturningLive;
 		buffered_.clear();
 		buffered_bytes_ = 0;
+		reset_timestamp_tracking_locked();
 		state_ = DelayState::Live;
 		return true;
 	}
@@ -48,6 +68,7 @@ void DelayController::return_live()
 	buffered_bytes_ = 0;
 	target_delay_ = kNoDelay;
 	error_.clear();
+	reset_timestamp_tracking_locked();
 	state_ = DelayState::Live;
 }
 
@@ -78,12 +99,22 @@ void DelayController::reset_for_discontinuity(std::string_view reason)
 	target_delay_ = kNoDelay;
 	state_ = DelayState::Live;
 	error_ = std::string(reason);
+	reset_timestamp_tracking_locked();
+}
+
+void DelayController::begin_timestamp_epoch()
+{
+	std::scoped_lock lock(mutex_);
+	timestamp_offset_us_.reset();
+	rebase_next_timestamp_ = true;
 }
 
 void DelayController::ingest(EncodedPacket packet)
 {
 	std::scoped_lock lock(mutex_);
 	if (state_ == DelayState::Error)
+		return;
+	if (!normalize_timestamp_locked(packet))
 		return;
 	if (state_ == DelayState::Live) {
 		ready_.push_back(std::move(packet));
@@ -101,6 +132,45 @@ void DelayController::ingest(EncodedPacket packet)
 		return;
 	}
 	promote_locked();
+}
+
+bool DelayController::normalize_timestamp_locked(EncodedPacket &packet)
+{
+	if (rebase_next_timestamp_) {
+		rebase_next_timestamp_ = false;
+		if (last_input_dts_us_) {
+			std::int64_t epoch_start = 0;
+			std::int64_t offset = 0;
+			if (!checked_add(*last_input_dts_us_, 1, epoch_start) ||
+			    !checked_subtract(epoch_start, packet.dts_us, offset)) {
+				set_error_locked("Encoder timestamp epoch cannot be represented safely");
+				return false;
+			}
+			timestamp_offset_us_ = offset;
+		}
+	}
+
+	if (timestamp_offset_us_) {
+		std::int64_t normalized_dts = 0;
+		std::int64_t normalized_pts = 0;
+		if (!checked_add(packet.dts_us, *timestamp_offset_us_, normalized_dts) ||
+		    !checked_add(packet.pts_us, *timestamp_offset_us_, normalized_pts)) {
+			set_error_locked("Encoder timestamps overflowed while joining a restarted epoch");
+			return false;
+		}
+		packet.dts_us = normalized_dts;
+		packet.pts_us = normalized_pts;
+	}
+
+	last_input_dts_us_ = packet.dts_us;
+	return true;
+}
+
+void DelayController::reset_timestamp_tracking_locked()
+{
+	last_input_dts_us_.reset();
+	timestamp_offset_us_.reset();
+	rebase_next_timestamp_ = false;
 }
 
 std::vector<EncodedPacket> DelayController::take_ready_packets()
