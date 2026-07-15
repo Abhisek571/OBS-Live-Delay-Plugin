@@ -2,13 +2,13 @@
 
 <h1 align="center"><span style="color: red;"><strong>🛑 WARNING: NOT PRODUCTION-READY 🛑</strong></span></h1>
 
-<h2 align="center"><span style="color: red;"><strong>Genuine OBS encoder-to-RTMP playback has not been verified. Beta.2 also has known dock lifecycle regressions that can make the dock unavailable after it is closed and can crash OBS during shutdown. Do not use it for a live production broadcast.</strong></span></h2>
+<h2 align="center"><span style="color: red;"><strong>Genuine delayed OBS encoder-to-RTMP playback has not been verified. Do not use this beta for a live production broadcast.</strong></span></h2>
 
 ## Beta
 
-This is an early beta of an OBS plugin for adding a delay after you are already live. While the delay is building or changing, OBS shows a holding scene. Once the delayed feed is ready, it switches back, giving you time to adjust the delay without taking the stream offline.
+Version `v0.1.32` is Beta 3 of an OBS plugin for adding a delay after you are already live. While the delay is building or changing, OBS shows a holding scene. Once the delayed feed is ready, it switches back, giving you time to adjust the delay.
 
-The dock, hotkeys, holding-scene controls, packet buffer, delay controller, FLV muxer, bounded sender queue, and RTMP connection layer are implemented. The plugin also builds against OBS 32.
+The dock, hotkeys, holding-scene controls, packet buffer, delay controller, FLV muxer, bounded sender queue, and RTMP connection layer are implemented. Beta 3 fixes the dock registration and shutdown lifecycle tracked in [#1](https://github.com/Abhisek571/OBS-Live-Delay-Plugin/issues/1) and [#2](https://github.com/Abhisek571/OBS-Live-Delay-Plugin/issues/2). It also includes the current Twitch handoff work for [#3](https://github.com/Abhisek571/OBS-Live-Delay-Plugin/issues/3), which still requires successful delayed-playback verification.
 
 The transport has published synthetic H.264/AAC FLV tags to a local RTMP server, but the complete OBS encoder-to-server path still needs end-to-end A/V validation. This beta remains for development and testing, not live production use.
 
@@ -22,6 +22,8 @@ The transport has published synthetic H.264/AAC FLV tags to a local RTMP server,
 - Stop safely when packet timestamps are invalid or the buffer reaches its limit
 - Mux released H.264/AAC packets into FLV on a normalized timeline
 - Send on a bounded worker-thread queue with reconnect and keyframe realignment
+- Reopen the dock from OBS's **Docks** menu and shut down without the beta.2 dock-lifecycle crash
+- Package the module's `en-US` locale file
 
 ## Build it
 

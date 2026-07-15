@@ -109,13 +109,27 @@ void signal_failure(OutputData *context, std::string error, int code)
 bool output_start(void *data)
 {
 	auto *context = static_cast<OutputData *>(data);
+	blog(LOG_INFO, "[active-live-delay] Custom output start callback entered");
 	context->sender.stop();
-	context->session->controller.return_live();
-	context->session->controller.take_ready_packets();
+	const auto preserve_controller =
+		context->session->preserve_controller_on_next_output_start.exchange(false, std::memory_order_acq_rel);
+	if (!preserve_controller) {
+		context->session->controller.return_live();
+		context->session->controller.take_ready_packets();
+	}
 	context->failure_signaled.store(false, std::memory_order_release);
-	if (!obs_output_can_begin_data_capture(context->output, 0) ||
-	    !obs_output_initialize_encoders(context->output, 0)) {
-		obs_output_set_last_error(context->output, "Unable to initialize the assigned H.264/AAC encoders");
+	if (!obs_output_can_begin_data_capture(context->output, 0)) {
+		obs_output_set_last_error(context->output, "OBS reported that encoded capture cannot begin yet");
+		blog(LOG_ERROR, "[active-live-delay] OBS refused encoded capture before encoder initialization");
+		return false;
+	}
+	if (!obs_output_initialize_encoders(context->output, 0)) {
+		const auto *encoder_error = obs_output_get_last_error(context->output);
+		std::string message = "Unable to initialize the assigned H.264/AAC encoders";
+		if (encoder_error && *encoder_error)
+			message += std::string(": ") + encoder_error;
+		obs_output_set_last_error(context->output, message.c_str());
+		blog(LOG_ERROR, "[active-live-delay] %s", message.c_str());
 		return false;
 	}
 
@@ -127,7 +141,14 @@ bool output_start(void *data)
 
 	FlvCodecHeaders headers;
 	std::string error;
-	if (!read_codec_headers(context->output, headers, error)) {
+	if (preserve_controller) {
+		std::scoped_lock lock(context->session->codec_headers_mutex);
+		if (context->session->cached_codec_headers)
+			headers = *context->session->cached_codec_headers;
+		else
+			error = "No cached H.264/AAC codec configuration is available for the delayed-output handoff";
+	}
+	if (!error.empty() || (!preserve_controller && !read_codec_headers(context->output, headers, error))) {
 		obs_output_set_last_error(context->output, error.c_str());
 		return false;
 	}
@@ -145,6 +166,7 @@ bool output_start(void *data)
 			},
 			error)) {
 			obs_output_set_last_error(context->output, error.c_str());
+			blog(LOG_ERROR, "[active-live-delay] RTMP sender startup failed: %s", error.c_str());
 			return false;
 		}
 		{
@@ -167,8 +189,12 @@ bool output_start(void *data)
 		std::scoped_lock lock(context->pipeline_mutex);
 		context->muxer.reset();
 		obs_output_set_last_error(context->output, "OBS refused to begin encoded data capture");
+		blog(LOG_ERROR, "[active-live-delay] OBS refused to begin encoded data capture after RTMP connected");
 		return false;
 	}
+	if (preserve_controller)
+		clear_cached_codec_headers(*context->session);
+	blog(LOG_INFO, "[active-live-delay] Custom output is connected and capturing encoded packets");
 	return true;
 }
 
@@ -197,15 +223,13 @@ void output_packet(void *data, encoder_packet *packet)
 		return;
 	}
 
-	EncodedPacket copy;
-	copy.kind = packet->type == OBS_ENCODER_VIDEO ? PacketKind::Video : PacketKind::Audio;
-	copy.payload.assign(packet->data, packet->data + packet->size);
-	copy.pts_us = packet->timebase_den != 0
-		? (packet->pts * 1'000'000LL * packet->timebase_num) / packet->timebase_den
-		: packet->dts_usec;
-	copy.dts_us = packet->dts_usec;
-	copy.keyframe = packet->keyframe;
-	context->session->controller.ingest(std::move(copy));
+	context->session->controller.ingest(copy_encoder_packet(*packet));
+	const auto controller_status = context->session->controller.status();
+	if (controller_status.state == DelayState::Error) {
+		signal_failure(context, controller_status.error.empty() ? "The delay controller stopped" : controller_status.error,
+			OBS_OUTPUT_ENCODE_ERROR);
+		return;
+	}
 
 	auto ready = context->session->controller.take_ready_packets();
 	if (ready.empty())
@@ -254,6 +278,35 @@ obs_output_info output_info = {
 	.protocols = "RTMP;RTMPS",
 };
 } // namespace
+
+EncodedPacket copy_encoder_packet(const encoder_packet &packet)
+{
+	EncodedPacket copy;
+	copy.kind = packet.type == OBS_ENCODER_VIDEO ? PacketKind::Video : PacketKind::Audio;
+	copy.payload.assign(packet.data, packet.data + packet.size);
+	copy.pts_us = packet.timebase_den != 0
+		? (packet.pts * 1'000'000LL * packet.timebase_num) / packet.timebase_den
+		: packet.dts_usec;
+	copy.dts_us = packet.dts_usec;
+	copy.keyframe = packet.keyframe;
+	return copy;
+}
+
+bool cache_active_codec_headers(obs_output_t *output, ActiveDelaySession &session, std::string &error)
+{
+	FlvCodecHeaders headers;
+	if (!read_codec_headers(output, headers, error))
+		return false;
+	std::scoped_lock lock(session.codec_headers_mutex);
+	session.cached_codec_headers = std::move(headers);
+	return true;
+}
+
+void clear_cached_codec_headers(ActiveDelaySession &session)
+{
+	std::scoped_lock lock(session.codec_headers_mutex);
+	session.cached_codec_headers.reset();
+}
 
 void register_active_delay_output(std::shared_ptr<ActiveDelaySession> session)
 {
