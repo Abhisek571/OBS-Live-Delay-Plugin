@@ -8,7 +8,7 @@
 
 Version `v0.1.32` is Beta 3 of an OBS plugin for adding a delay after you are already live. While the delay is building or changing, OBS shows a holding scene. Once the delayed feed is ready, it switches back, giving you time to adjust the delay.
 
-The dock, hotkeys, holding-scene controls, packet buffer, delay controller, FLV muxer, bounded sender queue, and RTMP connection layer are implemented. Beta 3 fixes the dock registration and shutdown lifecycle tracked in [#1](https://github.com/Abhisek571/OBS-Live-Delay-Plugin/issues/1) and [#2](https://github.com/Abhisek571/OBS-Live-Delay-Plugin/issues/2). It also includes the current Twitch handoff work for [#3](https://github.com/Abhisek571/OBS-Live-Delay-Plugin/issues/3), which still requires successful delayed-playback verification.
+The dock, hotkeys, holding-scene controls, packet buffer, delay controller, FLV muxer, bounded sender queue, and RTMP connection layer are implemented. Beta 3 fixes the dock registration and shutdown lifecycle tracked in [#1](https://github.com/Abhisek571/OBS-Live-Delay-Plugin/issues/1) and [#2](https://github.com/Abhisek571/OBS-Live-Delay-Plugin/issues/2), and implements the normal-stream packet capture and delayed-output handoff tracked in [#3](https://github.com/Abhisek571/OBS-Live-Delay-Plugin/issues/3). Runtime verification and the Twitch Enhanced Broadcasting offline regression are tracked separately in [#4](https://github.com/Abhisek571/OBS-Live-Delay-Plugin/issues/4).
 
 The transport has published synthetic H.264/AAC FLV tags to a local RTMP server, but the complete OBS encoder-to-server path still needs end-to-end A/V validation. This beta remains for development and testing, not live production use.
 
