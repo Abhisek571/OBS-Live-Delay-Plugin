@@ -1,12 +1,12 @@
 # OBS Live Delay Plugin
 
 <p align="center">
-  <img src="docs/production-warning.svg" width="100%" alt="Beta warning: v0.1.38 uses the direct-start workflow. Start and stop streaming from the plugin dock, not OBS's normal Start Streaming button. Test before production use.">
+  <img src="docs/production-warning.svg" width="100%" alt="Beta warning: v0.1.39 uses the direct-start workflow. Start and stop streaming from the plugin dock, not OBS's normal Start Streaming button. Test before production use.">
 </p>
 
-## Beta 5
+## Beta 5.1
 
-Version `v0.1.38` is a beta OBS plugin for adding or changing stream delay after you are already live. The initial user-run Twitch test reports that the new direct-start workflow works. Broader A/V, reconnect, delay-change, emergency-dump, and lifecycle acceptance testing is still required before production use.
+Version `v0.1.39` is a licensing and packaging correction to Beta 5 of an OBS plugin for adding or changing stream delay after you are already live. It contains the same streaming implementation initially tested in v0.1.38. The initial user-run Twitch test reports that the new direct-start workflow works. Broader A/V, reconnect, delay-change, emergency-dump, and lifecycle acceptance testing is still required before production use.
 
 Beta 5 replaces the unreliable live handoff with a plugin-owned stream from the beginning. The plugin creates H.264/AAC encoders from the active OBS **Simple Output** profile, connects to the configured streaming service, and keeps that connection while delay is added or removed. The old normal-OBS-output handoff is blocked because stopping the normal output caused Twitch to end the broadcast.
 
@@ -23,7 +23,7 @@ This release also converts OBS H.264 Annex-B packets to the length-prefixed AVC 
 ## Install
 
 1. Close OBS completely.
-2. Download `obs-active-live-delay-v0.1.38-windows-x64.zip` from the release.
+2. Download `obs-active-live-delay-v0.1.39-windows-x64.zip` from the release.
 3. Extract the ZIP into the OBS installation directory, normally:
 
    ```text
@@ -105,6 +105,14 @@ ctest --test-dir build-core -C Release --output-on-failure
 
 Building the DLL also needs the OBS development libraries available through `CMAKE_PREFIX_PATH`. The full plugin build adds an OBS-linked packet-conversion test; the local Release suite currently contains five CTest targets.
 
+## License
+
+Copyright © 2026 Abhisek571 and contributors.
+
+OBS Live Delay Plugin is free software licensed under the [GNU General Public License version 2 or later](LICENSE) (`GPL-2.0-or-later`). It is provided without warranty. The release ZIP includes both the complete license text and the project copyright notice.
+
+OBS Studio, libobs, FFmpeg, Qt, and other third-party components retain their own copyright and license terms.
+
 ## Status
 
-The direct-start OBS-to-Twitch path has an initial successful user report in v0.1.38, and all five automated test targets pass. Keep [issue #4](https://github.com/Abhisek571/OBS-Live-Delay-Plugin/issues/4) open until the delayed feed, A/V sync, Return Live, Emergency Dump, reconnect, and full lifecycle have recorded acceptance results.
+The direct-start OBS-to-Twitch path has an initial successful user report from the v0.1.38/v0.1.39 implementation, and all five automated test targets pass. Keep [issue #4](https://github.com/Abhisek571/OBS-Live-Delay-Plugin/issues/4) open until the delayed feed, A/V sync, Return Live, Emergency Dump, reconnect, and full lifecycle have recorded acceptance results.
