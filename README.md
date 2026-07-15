@@ -1,14 +1,18 @@
 # OBS Live Delay Plugin
 
-Windows-first OBS Studio plugin for operating an RTMP stream with a live-adjustable encoded-packet delay.
+An OBS plugin for putting a delay on a stream after you have already gone live.
 
-## Status
+It switches to a holding scene while the delay is building or changing, then switches back when the delayed feed is ready. That gives a producer time to moderate without stopping the stream.
 
-This repository contains the v1 plugin foundation: the bounded packet buffer, delay state machine, dock, scene switching, hotkeys, and an OBS encoded-output adapter. The RTMP wire transport is deliberately isolated behind `RtmpTransport`; it must be connected to a supported RTMP/FLV muxer before a release can publish a stream. This prevents a partial transport implementation from silently emitting invalid RTMP.
+## Where it is now
 
-## Development build
+This is early work, not a ready-to-install streaming plugin yet.
 
-Install an OBS Studio development environment that exports CMake packages for `libobs` and `obs-frontend-api`, plus Qt 6 Widgets. Then configure and build:
+The packet buffer, delay state changes, dock, holding-scene switching, hotkeys, and OBS output wrapper are in place. The RTMP/FLV sender still needs to be built, so the plugin will not start a real stream yet.
+
+## Building it
+
+You need the OBS development build, Qt 6, CMake, and Microsoft C++ Build Tools. The current project uses CMake:
 
 ```powershell
 cmake -S . -B build -DACTIVE_DELAY_BUILD_TESTS=ON
@@ -16,6 +20,8 @@ cmake --build build --config Release
 ctest --test-dir build -C Release
 ```
 
-## Intended end-user installation
+## Installing a future release
 
-Release ZIPs will preserve the OBS plugin layout. With OBS closed, extract the archive into the OBS installation directory, then open **Docks → OBS Active Live Delay**. V1 streams are started and stopped from the plugin dock rather than OBS's standard **Start Streaming** control.
+When releases are available, close OBS and extract the ZIP into its install folder. Open the plugin from **Docks → OBS Active Live Delay**.
+
+The first version will start and stop the managed stream from the plugin dock, rather than OBS's normal **Start Streaming** button.
