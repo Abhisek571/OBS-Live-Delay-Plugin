@@ -1,0 +1,20 @@
+# Build outputs
+/build/
+/build-*/
+/cmake-build-*/
+*.obj
+*.pdb
+*.ilk
+*.dll
+*.lib
+*.exp
+
+# Downloaded OBS source and its generated build tree
+/vendor/
+
+# Local agent and IDE files
+/.agents/
+/.codex/
+/.vs/
+/.vscode/
+*.user
