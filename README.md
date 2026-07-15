@@ -2,7 +2,7 @@
 
 An OBS plugin for putting a delay on a stream after you have already gone live.
 
-It switches to a holding scene while the delay is building or changing, then switches back when the delayed feed is ready. That gives a producer time to moderate without stopping the stream.
+It switches to a holding scene while the delay is building or changing, then switches back when the delayed feed is ready. That gives a stream time to alter delay without stopping the stream.
 
 ## Where it is now
 
