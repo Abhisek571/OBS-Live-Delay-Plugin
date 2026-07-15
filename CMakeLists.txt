@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.28)
 
-project(obs-active-live-delay VERSION 0.1.32 LANGUAGES CXX)
+project(obs-active-live-delay VERSION 0.1.35 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -14,6 +14,7 @@ if (ACTIVE_DELAY_BUILD_PLUGIN OR ACTIVE_DELAY_BUILD_TESTS)
 
     add_library(active-delay-core STATIC
         src/delay-controller.cpp
+        src/delayed-output-watchdog.cpp
         src/flv-muxer.cpp
         src/bounded-sender-queue.cpp
         src/rtmp-connection.cpp
@@ -76,7 +77,9 @@ if (ACTIVE_DELAY_BUILD_PLUGIN)
     install(TARGETS obs-active-live-delay
         LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}/obs-plugins"
         RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}/obs-plugins/64bit")
-    install(FILES data/obs-plugins/obs-active-live-delay/locale/en-US.ini
+    install(FILES
+        data/obs-plugins/obs-active-live-delay/locale/en-US.ini
+        data/obs-plugins/obs-active-live-delay/locale/en-GB.ini
         DESTINATION "data/obs-plugins/obs-active-live-delay/locale")
 endif()
 
@@ -95,4 +98,8 @@ if (ACTIVE_DELAY_BUILD_TESTS)
     add_executable(active-delay-sender-tests tests/rtmp-sender-tests.cpp)
     target_link_libraries(active-delay-sender-tests PRIVATE active-delay-core)
     add_test(NAME active-delay-sender-tests COMMAND active-delay-sender-tests)
+
+    add_executable(active-delay-output-watchdog-tests tests/delayed-output-watchdog-tests.cpp)
+    target_link_libraries(active-delay-output-watchdog-tests PRIVATE active-delay-core)
+    add_test(NAME active-delay-output-watchdog-tests COMMAND active-delay-output-watchdog-tests)
 endif()

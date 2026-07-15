@@ -131,6 +131,51 @@ void continues_after_a_forward_timestamp_gap()
 	require(state.current_delay == 2s, "the controller should retain the configured delay after a gap");
 	require(!controller.take_ready_packets().empty(), "packets should continue releasing after a reconnect gap");
 }
+
+void rebases_a_restarted_timestamp_epoch_without_losing_delay()
+{
+	DelayController controller;
+	require(controller.set_target(2s), "delay should be accepted");
+	controller.ingest(video(0, true));
+	controller.ingest(video(1'000'000, true));
+	controller.ingest(video(2'000'000, true));
+	controller.ingest(video(3'000'000, true));
+	controller.take_ready_packets();
+	require(controller.status().state == DelayState::Delayed, "delay should be active before encoder restart");
+
+	controller.begin_timestamp_epoch();
+	controller.ingest(video(0, true));
+	controller.ingest(audio(0));
+	controller.ingest(video(1'000'000, true));
+	controller.ingest(video(2'000'000, true));
+	controller.ingest(video(3'000'000, true));
+
+	const auto state = controller.status();
+	require(state.state == DelayState::Delayed, "a restarted encoder clock must preserve delayed state");
+	require(state.error.empty(), "timestamp rebasing must not report a backwards-clock error");
+	auto ready = controller.take_ready_packets();
+	require(!ready.empty(), "rebased packets should continue advancing delayed playback");
+	for (std::size_t index = 1; index < ready.size(); ++index)
+		require(ready[index].dts_us >= ready[index - 1].dts_us, "released DTS values must remain monotonic");
+}
+
+void preserves_composition_and_av_offsets_when_rebasing()
+{
+	DelayController controller;
+	controller.ingest({PacketKind::Video, {0x01}, 10'033'333, 10'000'000, true});
+	controller.take_ready_packets();
+	controller.begin_timestamp_epoch();
+	controller.ingest({PacketKind::Video, {0x02}, 0, -33'333, true});
+	controller.ingest(audio(0));
+
+	const auto packets = controller.take_ready_packets();
+	require(packets.size() == 2, "both packets from the restarted epoch should be released while live");
+	require(packets[0].dts_us == 10'000'001, "the restarted epoch should continue after the prior DTS");
+	require(packets[0].pts_us - packets[0].dts_us == 33'333,
+		"timestamp rebasing must preserve video composition time");
+	require(packets[1].dts_us - packets[0].dts_us == 33'333,
+		"one common timestamp offset must preserve audio/video timing");
+}
 } // namespace
 
 int main()
@@ -144,6 +189,8 @@ int main()
 		rejects_timestamp_regressions_while_buffering();
 		emergency_dump_requires_a_delayed_stream();
 		continues_after_a_forward_timestamp_gap();
+		rebases_a_restarted_timestamp_epoch_without_losing_delay();
+		preserves_composition_and_av_offsets_when_rebasing();
 		std::cout << "delay-controller tests passed\n";
 	} catch (const std::exception &error) {
 		std::cerr << "delay-controller test failure: " << error.what() << '\n';

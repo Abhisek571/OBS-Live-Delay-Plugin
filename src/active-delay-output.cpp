@@ -182,6 +182,8 @@ bool output_start(void *data)
 
 	context->active.store(true, std::memory_order_release);
 	context->capture_started.store(true, std::memory_order_release);
+	if (preserve_controller)
+		context->session->controller.begin_timestamp_epoch();
 	if (!obs_output_begin_data_capture(context->output, 0)) {
 		context->active.store(false, std::memory_order_release);
 		context->capture_started.store(false, std::memory_order_release);

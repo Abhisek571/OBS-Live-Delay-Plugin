@@ -1,5 +1,6 @@
 #include "active-delay-dock.hpp"
 #include "active-delay-output.hpp"
+#include "delayed-output-watchdog.hpp"
 
 extern "C" {
 #include <obs-frontend-api.h>
@@ -182,6 +183,9 @@ void ActiveDelayDock::refresh_scenes()
 
 void ActiveDelayDock::refresh_status()
 {
+	if (check_delayed_output_health())
+		return;
+
 	const auto value = session_->controller.status();
 	status_->setText(state_text(value.state));
 	current_delay_->setText(QString::number(value.current_delay.count() / 1'000'000.0, 'f', 1) + " sec");
@@ -297,6 +301,20 @@ bool ActiveDelayDock::start_delayed_output_from(obs_output_t *source, bool prese
 		return false;
 	}
 
+	// Twitch Enhanced Broadcasting synchronizes all of its video renditions
+	// through one encoder group. Reusing only rendition 0 while it is still in
+	// that group leaves it waiting forever for the other renditions to start:
+	// OBS draws frames, but the encoder emits no packets. The normal output has
+	// stopped before this method is called, so detach the retained primary
+	// encoder from the now-inactive multitrack group. A false result means OBS
+	// is still completing group teardown and the bounded handoff retry should
+	// run instead.
+	if (!obs_encoder_set_group(video_encoder, nullptr)) {
+		error = "The Twitch multitrack video encoder group is still stopping";
+		return false;
+	}
+	blog(LOG_INFO, "[active-live-delay] Primary video encoder detached from any multitrack encoder group");
+
 	auto *output = obs_output_create("active_delay_rtmp_output", "active_delay_stream", nullptr, nullptr);
 	if (!output) {
 		error = "OBS could not create the Active Live Delay output";
@@ -321,6 +339,8 @@ bool ActiveDelayDock::start_delayed_output_from(obs_output_t *source, bool prese
 	}
 	delayed_output_ = output;
 	output_flow_state_ = OutputFlowState::DelayedOutput;
+	delayed_output_started_at_ = std::chrono::steady_clock::now();
+	restart_normal_on_delayed_failure_ = preserve_delay;
 	persistent_output_error_.clear();
 	blog(LOG_INFO, "[active-live-delay] Delayed RTMP output started successfully");
 	return true;
@@ -366,6 +386,60 @@ void ActiveDelayDock::restart_normal_streaming()
 	obs_frontend_streaming_start();
 }
 
+bool ActiveDelayDock::check_delayed_output_health()
+{
+	if (output_flow_state_ != OutputFlowState::DelayedOutput || !delayed_output_)
+		return false;
+
+	const auto active_for = std::chrono::duration_cast<std::chrono::milliseconds>(
+		std::chrono::steady_clock::now() - delayed_output_started_at_);
+	const auto health = evaluate_delayed_output_health(obs_output_active(delayed_output_),
+		obs_output_get_total_frames(delayed_output_), active_for);
+	if (health == DelayedOutputHealth::Progressing)
+		return false;
+	if (health == DelayedOutputHealth::WaitingForVideo)
+		return false;
+
+	QString error;
+	if (health == DelayedOutputHealth::Stopped) {
+		const auto *last_error = obs_output_get_last_error(delayed_output_);
+		error = last_error && *last_error ? QString::fromUtf8(last_error)
+						  : "The delayed output stopped unexpectedly";
+	} else {
+		error = "The delayed output produced no encoded video frames within 5 seconds";
+	}
+	recover_from_delayed_output_failure(error);
+	return true;
+}
+
+void ActiveDelayDock::recover_from_delayed_output_failure(const QString &error)
+{
+	if (output_flow_state_ != OutputFlowState::DelayedOutput)
+		return;
+
+	const auto restart_normal = restart_normal_on_delayed_failure_;
+	blog(LOG_ERROR, "[active-live-delay] Delayed output failed after startup: %s%s", error.toUtf8().constData(),
+		restart_normal ? "; restarting normal OBS streaming" : "");
+	restart_normal_on_delayed_failure_ = false;
+	if (delayed_output_) {
+		if (obs_output_active(delayed_output_))
+			obs_output_stop(delayed_output_);
+		obs_output_release(delayed_output_);
+		delayed_output_ = nullptr;
+	}
+	output_flow_state_ = OutputFlowState::Stopped;
+	handoff_start_attempts_ = 0;
+	session_->preserve_controller_on_next_output_start.store(false, std::memory_order_release);
+	clear_cached_codec_headers(*session_);
+	session_->controller.return_live();
+	persistent_output_error_ = error;
+	if (restart_normal)
+		persistent_output_error_ += "; restarting normal OBS streaming";
+	restore_program_scene();
+	if (!shutting_down_ && restart_normal)
+		normal_restart_timer_->start(kNormalRestartDelayMs);
+}
+
 void ActiveDelayDock::start_delayed_output()
 {
 	if (delayed_output_ && obs_output_active(delayed_output_)) {
@@ -407,6 +481,7 @@ void ActiveDelayDock::stop_delayed_output()
 		delayed_output_ = nullptr;
 	}
 	output_flow_state_ = OutputFlowState::Stopped;
+	restart_normal_on_delayed_failure_ = false;
 	handoff_start_attempts_ = 0;
 	session_->preserve_controller_on_next_output_start.store(false, std::memory_order_release);
 	clear_cached_codec_headers(*session_);
@@ -422,6 +497,7 @@ void ActiveDelayDock::cancel_handoff(const QString &error)
 	detach_normal_capture();
 	release_normal_output();
 	output_flow_state_ = OutputFlowState::Stopped;
+	restart_normal_on_delayed_failure_ = false;
 	persistent_output_error_ = error;
 	handoff_start_attempts_ = 0;
 	blog(LOG_ERROR, "[active-live-delay] Handoff cancelled: %s", error.toUtf8().constData());
@@ -468,6 +544,7 @@ void ActiveDelayDock::shutdown()
 		delayed_output_ = nullptr;
 	}
 	output_flow_state_ = OutputFlowState::Stopped;
+	restart_normal_on_delayed_failure_ = false;
 	handoff_start_attempts_ = 0;
 	clear_cached_codec_headers(*session_);
 }
