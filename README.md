@@ -1,4 +1,4 @@
-# OBS Active Live Delay
+# OBS Live Delay Plugin
 
 Windows-first OBS Studio plugin for operating an RTMP stream with a live-adjustable encoded-packet delay.
 
