@@ -1,0 +1,17 @@
+name: Core unit tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  core-tests:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure core tests
+        run: cmake -S . -B build -DACTIVE_DELAY_BUILD_PLUGIN=OFF -DACTIVE_DELAY_BUILD_TESTS=ON
+      - name: Build core tests
+        run: cmake --build build --config Release
+      - name: Run core tests
+        run: ctest --test-dir build -C Release --output-on-failure

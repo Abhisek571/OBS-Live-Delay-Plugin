@@ -47,7 +47,6 @@ public:
 	bool emergency_dump(Microseconds duration, std::string *error = nullptr);
 	void reset_for_discontinuity(std::string_view reason);
 
-	// Called from the OBS encoded-output callback. It never performs network I/O.
 	void ingest(EncodedPacket packet);
 	std::vector<EncodedPacket> take_ready_packets();
 	[[nodiscard]] ControllerStatus status() const;

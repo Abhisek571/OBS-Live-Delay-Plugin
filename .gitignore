@@ -11,6 +11,7 @@
 
 # Downloaded OBS source and its generated build tree
 /vendor/
+/third_party/
 
 # Local agent and IDE files
 /.agents/

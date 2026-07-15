@@ -2,15 +2,19 @@
 
 #include <atomic>
 #include <memory>
+#include <utility>
 
 namespace active_delay {
 namespace {
 struct OutputData {
-	explicit OutputData(obs_output_t *output_) : output(output_) {}
+	OutputData(obs_output_t *output_, std::shared_ptr<ActiveDelaySession> session_)
+		: output(output_), session(std::move(session_)) {}
 	obs_output_t *output = nullptr;
-	DelayController controller;
+	std::shared_ptr<ActiveDelaySession> session;
 	std::atomic<std::uint64_t> accepted_bytes = 0;
 };
+
+std::shared_ptr<ActiveDelaySession> registered_session;
 
 const char *output_name(void *)
 {
@@ -19,7 +23,9 @@ const char *output_name(void *)
 
 void *output_create(obs_data_t *, obs_output_t *output)
 {
-	return new OutputData(output);
+	if (!registered_session)
+		return nullptr;
+	return new OutputData(output, registered_session);
 }
 
 void output_destroy(void *data)
@@ -36,9 +42,7 @@ bool output_start(void *data)
 		return false;
 	}
 
-	// The controller is intentionally independent of the network sender. A
-	// production RTMP/FLV transport is attached here before packets are exposed
-	// to end users; until then the output must not claim a successful stream.
+	// Do not start an output until it can deliver packets.
 	obs_output_set_last_error(context->output,
 		"RTMP transport is not linked. Build with the release RTMP/FLV transport module.");
 	return false;
@@ -47,7 +51,7 @@ bool output_start(void *data)
 void output_stop(void *data, std::uint64_t)
 {
 	auto *context = static_cast<OutputData *>(data);
-	context->controller.return_live();
+	context->session->controller.return_live();
 	obs_output_end_data_capture(context->output);
 }
 
@@ -55,7 +59,7 @@ void output_packet(void *data, encoder_packet *packet)
 {
 	auto *context = static_cast<OutputData *>(data);
 	if (!packet) {
-		context->controller.reset_for_discontinuity("The encoder stopped producing packets");
+		context->session->controller.reset_for_discontinuity("The encoder stopped producing packets");
 		obs_output_signal_stop(context->output, OBS_OUTPUT_ENCODE_ERROR);
 		return;
 	}
@@ -69,7 +73,7 @@ void output_packet(void *data, encoder_packet *packet)
 	copy.dts_us = packet->dts_usec;
 	copy.keyframe = packet->keyframe;
 	context->accepted_bytes.fetch_add(copy.payload.size(), std::memory_order_relaxed);
-	context->controller.ingest(std::move(copy));
+	context->session->controller.ingest(std::move(copy));
 }
 
 std::uint64_t output_total_bytes(void *data)
@@ -93,8 +97,9 @@ obs_output_info output_info = {
 };
 } // namespace
 
-void register_active_delay_output()
+void register_active_delay_output(std::shared_ptr<ActiveDelaySession> session)
 {
+	registered_session = std::move(session);
 	obs_register_output(&output_info);
 }
 
