@@ -1,10 +1,11 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 132" role="img" aria-labelledby="title description">
-  <title id="title">Beta: v0.1.52-beta52 uses direct-start workflow only</title>
-  <desc id="description">Start and stop streaming from the Active Live Delay dock, not OBS's normal Start Streaming button. Test before production use.</desc>
+  <title id="title">Beta: v0.1.52-beta52 has been runtime-tested with Twitch only</title>
+  <desc id="description">Other platforms and RTMP services are untested. Start and stop streaming from the Active Live Delay dock, not OBS's normal Start Streaming button.</desc>
   <rect x="3" y="3" width="1194" height="126" rx="12" fill="none" stroke="#f5a623" stroke-width="6"/>
   <g fill="#f5a623" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-weight="700">
-    <text x="600" y="42" font-size="30">BETA: v0.1.52-beta52 DIRECT-START WORKFLOW ONLY</text>
-    <text x="600" y="78" font-size="18">Start and stop streaming from the Active Live Delay dock.</text>
-    <text x="600" y="108" font-size="18">Do not use OBS Start Streaming. Test before production use.</text>
+    <text x="600" y="32" font-size="26">BETA: v0.1.52-beta52 — TWITCH TESTED ONLY</text>
+    <text x="600" y="59" font-size="17">Current version has runtime acceptance on Twitch only.</text>
+    <text x="600" y="84" font-size="17">Other platforms and RTMP services have not been tested.</text>
+    <text x="600" y="111" font-size="17">Use the Active Live Delay dock, not OBS Start Streaming.</text>
   </g>
 </svg>

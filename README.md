@@ -1,7 +1,7 @@
 # OBS Live Delay Plugin
 
 <p align="center">
-  <img src="docs/production-warning.svg" width="100%" alt="Beta warning: v0.1.52-beta52 uses the direct-start workflow. Start and stop streaming from the plugin dock, not OBS's normal Start Streaming button. Test before production use.">
+  <img src="docs/production-warning.svg" width="100%" alt="Beta warning: v0.1.52-beta52 has runtime acceptance on Twitch only. Other platforms and RTMP services are untested. Use the plugin dock, not OBS's normal Start Streaming button.">
 </p>
 
 ## v0.1.52-beta52
@@ -16,7 +16,9 @@ relying on it.
 - OBS **Settings → Output → Output Mode: Simple**
 - An H.264 streaming encoder such as NVENC H.264, x264, QSV H.264, or AMD H.264
 - AAC streaming audio
-- Your Twitch or other RTMP streaming service configured normally in OBS
+- A Twitch streaming service configured normally in OBS
+- This version has runtime acceptance on Twitch only; other platforms and RTMP
+  services are untested.
 
 ## Install
 
@@ -82,6 +84,8 @@ shutdown before relying on this beta workflow.
 - Direct start currently requires OBS **Simple Output** mode with H.264 video and AAC audio.
 - Do not try to switch an already-running normal OBS stream into the plugin; that workflow is blocked because Twitch ended the broadcast during handoff.
 - This is still a beta. Test with a non-critical stream before relying on it.
+- The current version has runtime acceptance on Twitch only. Do not infer
+  support for any other platform or RTMP service.
 - Close Delay, reconnect behaviour, long sessions, and clean shutdown need broader testing.
 - Native Multistream is experimental and has automated fake-server coverage
   only; recorded two-platform runtime acceptance remains required.

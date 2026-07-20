@@ -6,7 +6,9 @@ Release labels use `v0.1.NN-betaNN` for beta `NN`; for example, Beta 5 uses
 ## v0.1.52-beta52
 
 - Corrects the prerelease version label for the Native Multistream beta.
-- Content is unchanged from v0.1.40 — Beta 5.2.
+- States clearly that runtime acceptance currently covers Twitch only; other
+  platforms and RTMP services are untested.
+- Streaming binary is unchanged from v0.1.40 — Beta 5.2.
 
 ## v0.1.40 — Beta 5.2
 
