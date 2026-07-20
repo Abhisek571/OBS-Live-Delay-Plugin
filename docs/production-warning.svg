@@ -1,11 +1,11 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 132" role="img" aria-labelledby="title description">
-  <title id="title">Beta: v0.1.52-beta52 — Twitch tested only; other platforms untested</title>
-  <desc id="description">Use the Active Live Delay dock, not OBS's normal Start Streaming button.</desc>
-  <rect x="3" y="3" width="1194" height="126" rx="12" fill="none" stroke="#f5a623" stroke-width="6"/>
-  <g fill="#f5a623" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-weight="700">
+  <title id="title">Beta: v0.1.52-beta52 — read the entire README before use</title>
+  <desc id="description">Twitch tested only; other platforms untested. Use the Active Live Delay dock, not OBS's normal Start Streaming button.</desc>
+  <rect x="3" y="3" width="1194" height="126" rx="12" fill="none" stroke="#d73a4a" stroke-width="6"/>
+  <g fill="#d73a4a" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-weight="700">
     <text x="600" y="32" font-size="26">BETA: v0.1.52-beta52 — TWITCH TESTED ONLY</text>
-    <text x="600" y="59" font-size="17">TWITCH TESTED ONLY; OTHER PLATFORMS UNTESTED</text>
-    <text x="600" y="84" font-size="17">Use a non-critical stream for every test.</text>
+    <text x="600" y="59" font-size="17">READ THE ENTIRE README BEFORE USE</text>
+    <text x="600" y="84" font-size="17">TWITCH TESTED ONLY; OTHER PLATFORMS UNTESTED</text>
     <text x="600" y="111" font-size="17">Use the Active Live Delay dock, not OBS Start Streaming.</text>
   </g>
 </svg>
