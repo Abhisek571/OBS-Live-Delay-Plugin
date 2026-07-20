@@ -1,9 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 132" role="img" aria-labelledby="title description">
-  <title id="title">Beta: v0.1.40 uses direct-start workflow only</title>
+  <title id="title">Beta: v0.1.52-beta52 uses direct-start workflow only</title>
   <desc id="description">Start and stop streaming from the Active Live Delay dock, not OBS's normal Start Streaming button. Test before production use.</desc>
   <rect x="3" y="3" width="1194" height="126" rx="12" fill="none" stroke="#f5a623" stroke-width="6"/>
   <g fill="#f5a623" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-weight="700">
-    <text x="600" y="42" font-size="30">BETA: v0.1.40 DIRECT-START WORKFLOW ONLY</text>
+    <text x="600" y="42" font-size="30">BETA: v0.1.52-beta52 DIRECT-START WORKFLOW ONLY</text>
     <text x="600" y="78" font-size="18">Start and stop streaming from the Active Live Delay dock.</text>
     <text x="600" y="108" font-size="18">Do not use OBS Start Streaming. Test before production use.</text>
   </g>

@@ -1,10 +1,10 @@
 # OBS Live Delay Plugin
 
 <p align="center">
-  <img src="docs/production-warning.svg" width="100%" alt="Beta warning: v0.1.40 uses the direct-start workflow. Start and stop streaming from the plugin dock, not OBS's normal Start Streaming button. Test before production use.">
+  <img src="docs/production-warning.svg" width="100%" alt="Beta warning: v0.1.52-beta52 uses the direct-start workflow. Start and stop streaming from the plugin dock, not OBS's normal Start Streaming button. Test before production use.">
 </p>
 
-## v0.1.40 (Beta)
+## v0.1.52-beta52
 
 Active Live Delay lets you add, change, remove, or reduce a stream delay from
 an OBS dock. It is still beta software: use a non-critical test stream before
@@ -21,7 +21,7 @@ relying on it.
 ## Install
 
 1. Close OBS completely.
-2. Download `obs-active-live-delay-v0.1.40-windows-x64.zip` from the release.
+2. Download `obs-active-live-delay-v0.1.52-beta52-windows-x64.zip` from the release.
 3. Extract the ZIP into the OBS installation directory, normally:
 
    ```text
