@@ -1,5 +1,7 @@
 #include "rtmp-connection.hpp"
 
+#include "diagnostic-error.hpp"
+
 #include <cctype>
 #include <string_view>
 #include <utility>
@@ -35,22 +37,22 @@ bool build_rtmp_publish_url(const RtmpTarget &target, std::string &url, std::str
 	error.clear();
 	url.clear();
 	if (target.server_url.empty()) {
-		error = "RTMP server URL is empty";
+		error = diagnostic_error(DiagnosticCode::RtmpTargetInvalid, "RTMP server URL is empty");
 		return false;
 	}
 	if (target.stream_key.empty()) {
-		error = "RTMP stream key is empty";
+		error = diagnostic_error(DiagnosticCode::RtmpTargetInvalid, "RTMP stream key is empty");
 		return false;
 	}
 
 	const auto scheme_end = target.server_url.find("://");
 	if (scheme_end == std::string::npos) {
-		error = "RTMP server URL has no scheme";
+		error = diagnostic_error(DiagnosticCode::RtmpTargetInvalid, "RTMP server URL has no scheme");
 		return false;
 	}
 	const auto scheme = target.server_url.substr(0, scheme_end);
 	if (scheme != "rtmp" && scheme != "rtmps") {
-		error = "Only rtmp:// and rtmps:// server URLs are supported";
+		error = diagnostic_error(DiagnosticCode::RtmpTargetInvalid, "Only rtmp:// and rtmps:// server URLs are supported");
 		return false;
 	}
 
@@ -61,7 +63,7 @@ bool build_rtmp_publish_url(const RtmpTarget &target, std::string &url, std::str
 		const auto authority_end = server.find('/', scheme_end + 3);
 		const auto existing_at = server.find('@', scheme_end + 3);
 		if (existing_at != std::string::npos && (authority_end == std::string::npos || existing_at < authority_end)) {
-			error = "RTMP URL already contains credentials";
+			error = diagnostic_error(DiagnosticCode::RtmpTargetInvalid, "RTMP URL already contains credentials");
 			return false;
 		}
 		std::string credentials = percent_encode(target.username);
@@ -75,7 +77,7 @@ bool build_rtmp_publish_url(const RtmpTarget &target, std::string &url, std::str
 	while (!key.empty() && key.front() == '/')
 		key.erase(key.begin());
 	if (key.empty()) {
-		error = "RTMP stream key is empty";
+		error = diagnostic_error(DiagnosticCode::RtmpTargetInvalid, "RTMP stream key is empty");
 		return false;
 	}
 	url = std::move(server) + '/' + std::move(key);

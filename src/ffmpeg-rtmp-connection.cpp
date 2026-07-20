@@ -1,5 +1,7 @@
 #include "ffmpeg-rtmp-connection.hpp"
 
+#include "diagnostic-error.hpp"
+
 extern "C" {
 #include <libavformat/avio.h>
 #include <libavutil/dict.h>
@@ -51,7 +53,8 @@ bool FfmpegRtmpConnection::connect(const RtmpTarget &target, std::string &error)
 	AVIOInterruptCB callback = {interrupt_callback, this};
 	const auto result = avio_open2(&context_, url.c_str(), AVIO_FLAG_WRITE, &callback, options.address());
 	if (result < 0) {
-		error = "Unable to connect to the RTMP server: " + ffmpeg_error(result);
+		error = diagnostic_error(DiagnosticCode::RtmpConnectionFailed,
+			"Unable to connect to the RTMP server: " + ffmpeg_error(result));
 		context_ = nullptr;
 		return false;
 	}
@@ -61,7 +64,7 @@ bool FfmpegRtmpConnection::connect(const RtmpTarget &target, std::string &error)
 bool FfmpegRtmpConnection::send(std::span<const std::uint8_t> bytes, std::string &error)
 {
 	if (!context_) {
-		error = "RTMP connection is not open";
+		error = diagnostic_error(DiagnosticCode::RtmpWriteFailed, "RTMP connection is not open");
 		return false;
 	}
 	while (!bytes.empty()) {
@@ -71,7 +74,8 @@ bool FfmpegRtmpConnection::send(std::span<const std::uint8_t> bytes, std::string
 	}
 	avio_flush(context_);
 	if (context_->error < 0) {
-		error = "RTMP write failed: " + ffmpeg_error(context_->error);
+		error = diagnostic_error(DiagnosticCode::RtmpWriteFailed,
+			"RTMP write failed: " + ffmpeg_error(context_->error));
 		return false;
 	}
 	return true;

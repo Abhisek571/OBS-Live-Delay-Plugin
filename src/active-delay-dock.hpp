@@ -15,7 +15,9 @@ extern "C" {
 #include <QString>
 
 class QComboBox;
+class QCheckBox;
 class QLabel;
+class QLineEdit;
 class QPushButton;
 class QSpinBox;
 class QTimer;
@@ -29,7 +31,6 @@ public:
 
 	void enable_delay();
 	void return_live();
-	void emergency_dump();
 	void handle_frontend_event(obs_frontend_event event);
 	void shutdown();
 
@@ -53,6 +54,9 @@ private:
 	void cancel_handoff(const QString &error);
 	void refresh_scenes();
 	void refresh_status();
+	void load_multistream_settings();
+	bool configure_multistream_mode(QString &error);
+	void refresh_target_status();
 	void switch_to_holding_scene();
 	void restore_program_scene();
 
@@ -60,9 +64,13 @@ private:
 	QLabel *status_ = nullptr;
 	QLabel *output_status_ = nullptr;
 	QLabel *current_delay_ = nullptr;
+	QLabel *target_status_ = nullptr;
 	QComboBox *holding_scene_ = nullptr;
 	QSpinBox *target_seconds_ = nullptr;
-	QSpinBox *dump_seconds_ = nullptr;
+	QCheckBox *secondary_enabled_ = nullptr;
+	QLineEdit *secondary_name_ = nullptr;
+	QLineEdit *secondary_server_ = nullptr;
+	QLineEdit *secondary_key_ = nullptr;
 	QPushButton *enable_button_ = nullptr;
 	QPushButton *return_live_button_ = nullptr;
 	QPushButton *start_output_button_ = nullptr;

@@ -1,10 +1,10 @@
 # OBS Live Delay Plugin
 
 <p align="center">
-  <img src="docs/production-warning.svg" width="100%" alt="Beta warning: v0.1.39 uses the direct-start workflow. Start and stop streaming from the plugin dock, not OBS's normal Start Streaming button. Test before production use.">
+  <img src="docs/production-warning.svg" width="100%" alt="Beta warning: v0.1.40 uses the direct-start workflow. Start and stop streaming from the plugin dock, not OBS's normal Start Streaming button. Test before production use.">
 </p>
 
-## v0.1.39 (Beta)
+## v0.1.40 (Beta)
 
 Active Live Delay lets you add, change, remove, or reduce a stream delay from
 an OBS dock. It is still beta software: use a non-critical test stream before
@@ -21,7 +21,7 @@ relying on it.
 ## Install
 
 1. Close OBS completely.
-2. Download `obs-active-live-delay-v0.1.39-windows-x64.zip` from the release.
+2. Download `obs-active-live-delay-v0.1.40-windows-x64.zip` from the release.
 3. Extract the ZIP into the OBS installation directory, normally:
 
    ```text
@@ -37,32 +37,44 @@ Do not press OBS's normal **Start Streaming** button. The dock owns the stream c
 ### Start streaming and add delay
 
 1. In the Active Live Delay dock, select a **Holding Scene**.
-2. Press **Start Delayed Output**.
+2. Press **Start Stream**.
 3. Wait until **Delayed Output** says `ACTIVE`, then confirm the platform shows you live.
 4. Enter the desired **Target Delay (sec)**.
-5. Press **Enable / Set Delay**.
+5. Press **Enable Delay**.
 6. The holding scene is shown while the buffer builds. For example, a 15-second delay needs roughly 15 seconds of buffering.
 7. When the target is ready, the dock reports `DELAYED` and restores the original scene.
 
-### Remove or reduce delay
+### Remove delay
 
-- Press **Return Live** to clear the delay while keeping the broadcast running.
-- Press **Emergency Dump** to reduce the current delay by the configured **Emergency Dump (sec)** value.
-- Enter another target and press **Enable / Set Delay** to change the delay.
+- Press **Close Delay** to clear the delay while keeping the broadcast running.
 
 ### End the broadcast
 
-Press **Stop Delayed Output**. This ends the streaming connection completely.
+Press **Stop Stream**. This ends the streaming connection completely.
+
+### Experimental: Native Multistream (two RTMP destinations)
+
+Native Multistream is experimental. The dock can send the same delayed
+H.264/AAC rendition to the OBS streaming service plus one manual secondary
+RTMP/RTMPS destination. Before starting, enable **Experimental Native
+Multistream secondary** and enter its name, RTMP server, and stream key. These
+settings are saved in the active OBS profile and are hidden from dock status and
+plugin logs.
+
+The primary OBS service owns the output state. A failed or slow secondary is
+shown as `FAILED` in **Targets** but must not stop the primary. Destination
+editing is disabled while the output is active. Test two non-critical platform
+destinations, reconnect, Return Live, Emergency Dump, Stop Stream, and OBS
+shutdown before relying on this beta workflow.
 
 ## Button reference
 
 | Button | Effect |
 |:---|:---|
-| **Start Delayed Output** | Starts the platform broadcast through the plugin. Press this instead of OBS **Start Streaming**. |
-| **Stop Delayed Output** | Ends the platform broadcast completely. |
-| **Enable / Set Delay** | Starts or changes the delay while the plugin output is active. |
-| **Return Live** | Removes the delay but keeps streaming. |
-| **Emergency Dump** | Reduces the current delay by the configured dump amount. |
+| **Start Stream** | Starts the platform broadcast through the plugin. Press this instead of OBS **Start Streaming**. |
+| **Stop Stream** | Ends the platform broadcast completely. |
+| **Enable Delay** | Starts the configured delay while the plugin output is active. |
+| **Close Delay** | Removes the delay but keeps streaming. |
 
 ## Before you use it
 
@@ -70,7 +82,11 @@ Press **Stop Delayed Output**. This ends the streaming connection completely.
 - Direct start currently requires OBS **Simple Output** mode with H.264 video and AAC audio.
 - Do not try to switch an already-running normal OBS stream into the plugin; that workflow is blocked because Twitch ended the broadcast during handoff.
 - This is still a beta. Test with a non-critical stream before relying on it.
-- Return Live, Emergency Dump, reconnect behaviour, long sessions, and clean shutdown need broader testing.
+- Close Delay, reconnect behaviour, long sessions, and clean shutdown need broader testing.
+- Native Multistream is experimental and has automated fake-server coverage
+  only; recorded two-platform runtime acceptance remains required.
+- If the dock reports an `ALD-E####` error during testing, record the code and
+  safe message with the OBS log. See the [error-code guide](docs/ERROR-CODES.md).
 
 ## For contributors
 

@@ -90,6 +90,12 @@ bool wait_for_writes(const std::shared_ptr<FakeState> &state, std::size_t count)
 	return state->changed.wait_for(lock, 2s, [&] { return state->writes.size() >= count; });
 }
 
+bool wait_for_failure(const std::shared_ptr<FakeState> &state)
+{
+	std::unique_lock lock(state->mutex);
+	return state->changed.wait_for(lock, 2s, [&] { return state->interrupted; });
+}
+
 std::vector<FlvTag> headers()
 {
 	return FlvMuxer({{0x01}, {0x12, 0x10}}).sequence_headers();
@@ -161,6 +167,44 @@ void sender_reconnects_resends_headers_and_realigns_to_keyframe()
 	require(state->writes[4] == make_flv_header(), "reconnect should begin a new FLV stream");
 	require(state->writes[7] == serialize_flv_tag(video(true, 0x24)), "reconnect should discard media until the next keyframe");
 }
+
+void sender_reports_one_terminal_output_failure()
+{
+	auto state = std::make_shared<FakeState>();
+	RtmpSender sender([state] { return std::make_unique<FakeConnection>(state); },
+		{{16, 4'096}, 0, 1ms, 1s});
+	std::atomic_uint callback_count = 0;
+	std::string callback_error;
+	std::mutex callback_mutex;
+	std::string error;
+	require(sender.start({"rtmp://localhost/live", "test"}, headers(),
+		[&](const std::string &message) {
+			std::scoped_lock lock(callback_mutex);
+			callback_error = message;
+			++callback_count;
+			std::scoped_lock state_lock(state->mutex);
+			state->interrupted = true;
+			state->changed.notify_all();
+		},
+		error), "fake sender should start");
+	{
+		std::scoped_lock lock(state->mutex);
+		state->fail_on_send = 4;
+	}
+	require(sender.enqueue({video(true, 0x30)}, error), "failing media write should enter the sender queue");
+	require(wait_for_failure(state), "terminal runtime failure should notify the output owner");
+
+	const auto status = sender.status();
+	require(status.state == SenderState::Failed, "exhausted reconnects must leave the sender failed");
+	require(status.error.find("injected write failure") != std::string::npos,
+		"terminal failure should retain the connection error");
+	require(callback_count == 1, "the output failure callback must be signaled exactly once");
+	{
+		std::scoped_lock lock(callback_mutex);
+		require(callback_error == status.error, "the callback should receive the terminal sender error");
+	}
+	sender.stop();
+}
 } // namespace
 
 int main()
@@ -170,6 +214,7 @@ int main()
 		publish_url_carries_service_credentials_and_key();
 		sender_primes_connection_and_starts_at_keyframe();
 		sender_reconnects_resends_headers_and_realigns_to_keyframe();
+		sender_reports_one_terminal_output_failure();
 		std::cout << "RTMP sender tests passed\n";
 	} catch (const std::exception &error) {
 		std::cerr << "RTMP sender test failure: " << error.what() << '\n';

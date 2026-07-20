@@ -103,6 +103,7 @@ void rejects_timestamp_regression_without_advancing_state()
 	require(!muxer.mux({packet(PacketKind::Audio, {0x02}, 1'999'000, 1'999'000)}, tags, error),
 		"backwards DTS should be rejected");
 	require(error.find("backwards") != std::string::npos, "timestamp failure should be explicit");
+	require(error.starts_with("[ALD-E2008]"), "mux failures must carry a stable diagnostic code");
 	require(muxer.mux({packet(PacketKind::Audio, {0x03}, 2'010'000, 2'010'000)}, tags, error),
 		"a rejected batch must not corrupt muxer state");
 	require(tags[0].timestamp_ms == 10, "timeline should remain based on the accepted packet");
@@ -116,6 +117,7 @@ void rejects_annex_b_video_before_sending_it_to_rtmp()
 	require(!muxer.mux({packet(PacketKind::Video, {0x00, 0x00, 0x00, 0x01, 0x65, 0x88, 0x84},
 		1'000'000, 1'000'000, true)}, tags, error), "Annex-B H.264 must not be written into an FLV tag");
 	require(error.find("Annex-B") != std::string::npos, "the packet-format error should identify Annex-B input");
+	require(error.starts_with("[ALD-E2008]"), "packet-format failures must carry a stable diagnostic code");
 }
 
 void rejects_invalid_avc_nal_lengths()

@@ -25,7 +25,7 @@ Media path:
 - H.264 Annex-B packets are converted to FLV-compatible length-prefixed AVC.
 - Delayed playback resumes on a video keyframe.
 - The holding scene remains active while a delay builds or changes.
-- Return Live clears buffered delay without intentionally ending the stream.
+- Close Delay clears buffered delay without intentionally ending the stream.
 - Sender reconnects realign on a video keyframe.
 
 ## Current support boundary
@@ -37,8 +37,20 @@ Media path:
 
 Enhanced Broadcasting, advanced multitrack output, and normal-output handoff
 are not supported by this beta. Runtime acceptance remains required for A/V
-sync, reconnect, long-session stability, Return Live, Emergency Dump, stopping,
+sync, reconnect, long-session stability, Close Delay, stopping,
 and OBS shutdown.
+
+## Planned compatibility architecture
+
+Native multistream fan-out and a compressed Delayed Program Source are proposed,
+not implemented. The source path is intended to let normal OBS, Aitum, SE.Live,
+and other output owners consume delayed programme video/audio as an ordinary OBS
+source. It is gated on proving isolated scene video and audio capture without a
+recursive scene path.
+
+See `docs/MULTISTREAM-COMPATIBILITY-ROADMAP.md` and
+`docs/architecture/ADR-001-multistream-compatibility.md`. The ordered checklist
+is `TODO.md`.
 
 ## Main code areas
 
