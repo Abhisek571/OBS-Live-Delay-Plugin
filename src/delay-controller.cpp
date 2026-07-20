@@ -1,5 +1,7 @@
 #include "delay-controller.hpp"
 
+#include "diagnostic-error.hpp"
+
 #include <algorithm>
 #include <limits>
 
@@ -32,7 +34,8 @@ bool DelayController::set_target(Microseconds target, std::string *error)
 {
 	std::scoped_lock lock(mutex_);
 	if (target < kNoDelay || target > limits_.max_delay) {
-		const auto message = "Requested delay is outside the configured maximum";
+		const auto message = diagnostic_error(DiagnosticCode::OutputControllerFailed,
+			"Requested delay is outside the configured maximum");
 		if (error)
 			*error = message;
 		return false;
@@ -56,7 +59,8 @@ bool DelayController::set_target(Microseconds target, std::string *error)
 
 	state_ = DelayState::Delayed;
 	if (!trim_to_target_locked())
-		set_error_locked("Unable to find a safe video keyframe while reducing delay");
+		set_error_locked(diagnostic_error(DiagnosticCode::OutputControllerFailed,
+			"Unable to find a safe video keyframe while reducing delay"));
 	return state_ != DelayState::Error;
 }
 
@@ -70,24 +74,6 @@ void DelayController::return_live()
 	error_.clear();
 	reset_timestamp_tracking_locked();
 	state_ = DelayState::Live;
-}
-
-bool DelayController::emergency_dump(Microseconds duration, std::string *error)
-{
-	std::scoped_lock lock(mutex_);
-	if (state_ != DelayState::Delayed || duration <= kNoDelay) {
-		if (error)
-			*error = "Emergency dump is available only while delayed";
-		return false;
-	}
-	const auto desired = std::max(kNoDelay, duration_locked() - duration);
-	target_delay_ = desired;
-	if (!trim_to_target_locked()) {
-		if (error)
-			*error = "No safe video keyframe is buffered for the requested dump";
-		return false;
-	}
-	return true;
 }
 
 void DelayController::reset_for_discontinuity(std::string_view reason)
@@ -121,14 +107,16 @@ void DelayController::ingest(EncodedPacket packet)
 		return;
 	}
 	if (!buffered_.empty() && packet.dts_us < buffered_.back().dts_us) {
-		set_error_locked("Encoder packet timestamps moved backwards");
+		set_error_locked(diagnostic_error(DiagnosticCode::OutputControllerFailed,
+			"Encoder packet timestamps moved backwards"));
 		return;
 	}
 
 	buffered_bytes_ += packet.payload.size();
 	buffered_.push_back(std::move(packet));
 	if (buffered_bytes_ > limits_.max_bytes) {
-		set_error_locked("Encoded packet buffer reached its memory limit");
+		set_error_locked(diagnostic_error(DiagnosticCode::OutputControllerFailed,
+			"Encoded packet buffer reached its memory limit"));
 		return;
 	}
 	promote_locked();
@@ -143,7 +131,8 @@ bool DelayController::normalize_timestamp_locked(EncodedPacket &packet)
 			std::int64_t offset = 0;
 			if (!checked_add(*last_input_dts_us_, 1, epoch_start) ||
 			    !checked_subtract(epoch_start, packet.dts_us, offset)) {
-				set_error_locked("Encoder timestamp epoch cannot be represented safely");
+				set_error_locked(diagnostic_error(DiagnosticCode::OutputControllerFailed,
+					"Encoder timestamp epoch cannot be represented safely"));
 				return false;
 			}
 			timestamp_offset_us_ = offset;
@@ -155,7 +144,8 @@ bool DelayController::normalize_timestamp_locked(EncodedPacket &packet)
 		std::int64_t normalized_pts = 0;
 		if (!checked_add(packet.dts_us, *timestamp_offset_us_, normalized_dts) ||
 		    !checked_add(packet.pts_us, *timestamp_offset_us_, normalized_pts)) {
-			set_error_locked("Encoder timestamps overflowed while joining a restarted epoch");
+				set_error_locked(diagnostic_error(DiagnosticCode::OutputControllerFailed,
+					"Encoder timestamps overflowed while joining a restarted epoch"));
 			return false;
 		}
 		packet.dts_us = normalized_dts;
@@ -195,7 +185,8 @@ void DelayController::promote_locked()
 {
 	if (state_ == DelayState::BuildingDelay && duration_locked() >= target_delay_) {
 		if (!discard_to_next_keyframe_locked()) {
-			set_error_locked("No video keyframe is available to begin delayed playback");
+			set_error_locked(diagnostic_error(DiagnosticCode::OutputControllerFailed,
+				"No video keyframe is available to begin delayed playback"));
 			return;
 		}
 		state_ = DelayState::Delayed;

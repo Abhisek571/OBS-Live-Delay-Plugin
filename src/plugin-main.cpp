@@ -1,5 +1,6 @@
 #include "active-delay-dock.hpp"
 #include "active-delay-output.hpp"
+#include "scene-capture-probe.hpp"
 
 #include <memory>
 
@@ -18,7 +19,6 @@ QPointer<active_delay::ActiveDelayDock> dock;
 std::shared_ptr<active_delay::ActiveDelaySession> session;
 obs_hotkey_id enable_hotkey = OBS_INVALID_HOTKEY_ID;
 obs_hotkey_id return_live_hotkey = OBS_INVALID_HOTKEY_ID;
-obs_hotkey_id dump_hotkey = OBS_INVALID_HOTKEY_ID;
 
 void unregister_hotkeys()
 {
@@ -29,10 +29,6 @@ void unregister_hotkeys()
 	if (return_live_hotkey != OBS_INVALID_HOTKEY_ID) {
 		obs_hotkey_unregister(return_live_hotkey);
 		return_live_hotkey = OBS_INVALID_HOTKEY_ID;
-	}
-	if (dump_hotkey != OBS_INVALID_HOTKEY_ID) {
-		obs_hotkey_unregister(dump_hotkey);
-		dump_hotkey = OBS_INVALID_HOTKEY_ID;
 	}
 }
 
@@ -46,12 +42,6 @@ void return_live_hotkey_callback(void *, obs_hotkey_id, obs_hotkey_t *, bool pre
 {
 	if (pressed && dock)
 		dock->return_live();
-}
-
-void dump_hotkey_callback(void *, obs_hotkey_id, obs_hotkey_t *, bool pressed)
-{
-	if (pressed && dock)
-		dock->emergency_dump();
 }
 
 void create_dock()
@@ -91,10 +81,12 @@ bool obs_module_load(void)
 {
 	session = std::make_shared<active_delay::ActiveDelaySession>();
 	active_delay::register_active_delay_output(session);
+#if ACTIVE_DELAY_ENABLE_SCENE_PROBE
+	active_delay::register_scene_capture_probe();
+#endif
 	obs_frontend_add_event_callback(frontend_event_callback, nullptr);
-	enable_hotkey = obs_hotkey_register_frontend("active_delay_enable", "Active Delay: Enable / Set Delay", enable_hotkey_callback, nullptr);
-	return_live_hotkey = obs_hotkey_register_frontend("active_delay_return_live", "Active Delay: Return Live", return_live_hotkey_callback, nullptr);
-	dump_hotkey = obs_hotkey_register_frontend("active_delay_dump", "Active Delay: Emergency Dump", dump_hotkey_callback, nullptr);
+	enable_hotkey = obs_hotkey_register_frontend("active_delay_enable", "Active Delay: Enable Delay", enable_hotkey_callback, nullptr);
+	return_live_hotkey = obs_hotkey_register_frontend("active_delay_return_live", "Active Delay: Close Delay", return_live_hotkey_callback, nullptr);
 	return true;
 }
 

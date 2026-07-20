@@ -46,6 +46,44 @@ void builds_and_releases_delay()
 		"delayed playback must begin on a video keyframe");
 }
 
+void preserves_live_timestamps_and_drains_each_packet_once()
+{
+	DelayController controller;
+	controller.ingest({PacketKind::Video, {0x01}, 1'033'333, 1'000'000, true});
+	controller.ingest({PacketKind::Audio, {0x02}, 1'010'000, 1'010'000, false});
+
+	const auto ready = controller.take_ready_packets();
+	require(ready.size() == 2, "live packets should be released in one drain");
+	require(ready[0].kind == PacketKind::Video && ready[0].dts_us == 1'000'000 &&
+		ready[0].pts_us == 1'033'333,
+		"the live path must preserve video DTS, PTS, and ingest order");
+	require(ready[1].kind == PacketKind::Audio && ready[1].dts_us == 1'010'000 &&
+		ready[1].pts_us == 1'010'000,
+		"the live path must preserve audio timestamps and ingest order");
+	require(controller.take_ready_packets().empty(), "a released packet must not be returned twice");
+}
+
+void releases_delayed_packets_in_ingest_order()
+{
+	DelayController controller;
+	require(controller.set_target(2s), "2-second delay should be accepted");
+	controller.ingest(video(0, true));
+	controller.ingest(audio(0));
+	controller.ingest(video(1'000'000, true));
+	controller.ingest(audio(1'000'000));
+	controller.ingest(video(2'000'000, true));
+	controller.ingest(audio(2'000'000));
+	controller.ingest(video(3'000'000, true));
+
+	const auto ready = controller.take_ready_packets();
+	require(ready.size() == 2, "only media older than the target delay should be released");
+	require(ready[0].kind == PacketKind::Video && ready[0].dts_us == 0,
+		"the delayed release must begin with the buffered keyframe");
+	require(ready[1].kind == PacketKind::Audio && ready[1].dts_us == 0,
+		"equal-timestamp packets must retain ingest order");
+	require(controller.take_ready_packets().empty(), "the delayed drain must be exactly once");
+}
+
 void returning_live_clears_the_buffer()
 {
 	DelayController controller;
@@ -64,6 +102,7 @@ void refuses_over_limit_target()
 	std::string error;
 	require(!controller.set_target(6s, &error), "over-limit target must be rejected");
 	require(!error.empty(), "over-limit target should provide an error");
+	require(error.starts_with("[ALD-E2007]"), "controller errors must carry a stable diagnostic code");
 }
 
 void refuses_to_start_delayed_playback_without_a_keyframe()
@@ -75,6 +114,7 @@ void refuses_to_start_delayed_playback_without_a_keyframe()
 	const auto state = controller.status();
 	require(state.state == DelayState::Error, "delayed playback without a keyframe is unsafe");
 	require(!state.error.empty(), "missing keyframe should be reported");
+	require(state.error.starts_with("[ALD-E2007]"), "controller state errors must carry a stable diagnostic code");
 }
 
 void enforces_the_memory_limit()
@@ -96,22 +136,6 @@ void rejects_timestamp_regressions_while_buffering()
 	const auto state = controller.status();
 	require(state.state == DelayState::Error, "out-of-order DTS is unsafe for delay accounting");
 	require(state.error.find("backwards") != std::string::npos, "timestamp error should be clear");
-}
-
-void emergency_dump_requires_a_delayed_stream()
-{
-	DelayController controller;
-	std::string error;
-	require(!controller.emergency_dump(1s, &error), "dump before delay is active must be rejected");
-	require(!error.empty(), "invalid dump should have an error");
-
-	require(controller.set_target(2s), "delay should be accepted");
-	controller.ingest(video(0, true));
-	controller.ingest(video(1'000'000, true));
-	controller.ingest(video(2'000'000, true));
-	require(controller.status().state == DelayState::Delayed, "stream should be delayed");
-	require(controller.emergency_dump(1s, &error), "safe dump should be accepted");
-	require(controller.status().target_delay == 1s, "dump should lower the target delay");
 }
 
 void continues_after_a_forward_timestamp_gap()
@@ -176,21 +200,47 @@ void preserves_composition_and_av_offsets_when_rebasing()
 	require(packets[1].dts_us - packets[0].dts_us == 33'333,
 		"one common timestamp offset must preserve audio/video timing");
 }
+
+void discontinuity_discards_unreleased_media_and_starts_a_clean_epoch()
+{
+	DelayController controller;
+	require(controller.set_target(2s), "delay should be accepted");
+	controller.ingest(video(0, true));
+	controller.ingest(video(1'000'000, true));
+	controller.ingest(video(2'000'000, true));
+	controller.ingest(video(3'000'000, true));
+	controller.reset_for_discontinuity("encoder restarted");
+
+	const auto reset = controller.status();
+	require(reset.state == DelayState::Live, "a discontinuity should return the controller to live mode");
+	require(reset.current_delay == 0us && reset.target_delay == 0us,
+		"a discontinuity must discard the old delayed timeline");
+	require(reset.error == "encoder restarted", "the discontinuity reason should remain observable");
+	require(controller.take_ready_packets().empty(),
+		"a discontinuity must discard released-but-not-yet-consumed packets from the old epoch");
+
+	controller.ingest(video(0, true));
+	const auto ready = controller.take_ready_packets();
+	require(ready.size() == 1 && ready.front().dts_us == 0,
+		"the next encoder epoch should not inherit timestamps from discarded media");
+}
 } // namespace
 
 int main()
 {
 	try {
 		builds_and_releases_delay();
+		preserves_live_timestamps_and_drains_each_packet_once();
+		releases_delayed_packets_in_ingest_order();
 		returning_live_clears_the_buffer();
 		refuses_over_limit_target();
 		refuses_to_start_delayed_playback_without_a_keyframe();
 		enforces_the_memory_limit();
 		rejects_timestamp_regressions_while_buffering();
-		emergency_dump_requires_a_delayed_stream();
 		continues_after_a_forward_timestamp_gap();
 		rebases_a_restarted_timestamp_epoch_without_losing_delay();
 		preserves_composition_and_av_offsets_when_rebasing();
+		discontinuity_discards_unreleased_media_and_starts_a_clean_epoch();
 		std::cout << "delay-controller tests passed\n";
 	} catch (const std::exception &error) {
 		std::cerr << "delay-controller test failure: " << error.what() << '\n';

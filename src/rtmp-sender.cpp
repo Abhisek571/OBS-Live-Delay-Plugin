@@ -1,5 +1,6 @@
 #include "rtmp-sender.hpp"
 
+#include "diagnostic-error.hpp"
 #include "flv-muxer.hpp"
 
 #include <exception>
@@ -25,18 +26,19 @@ bool RtmpSender::start(RtmpTarget target, std::vector<FlvTag> sequence_headers, 
 {
 	stop();
 	if (sequence_headers.empty()) {
-		error = "FLV sequence headers are empty";
+		error = diagnostic_error(DiagnosticCode::RtmpSenderStartupFailed, "FLV sequence headers are empty");
 		return false;
 	}
 
 	try {
 		connection_ = factory_();
 	} catch (const std::exception &exception) {
-		error = std::string("Unable to create RTMP connection: ") + exception.what();
+		error = diagnostic_error(DiagnosticCode::RtmpSenderStartupFailed,
+			std::string("Unable to create RTMP connection: ") + exception.what());
 		return false;
 	}
 	if (!connection_) {
-		error = "Unable to create RTMP connection";
+		error = diagnostic_error(DiagnosticCode::RtmpSenderStartupFailed, "Unable to create RTMP connection");
 		return false;
 	}
 
@@ -60,9 +62,11 @@ bool RtmpSender::start(RtmpTarget target, std::vector<FlvTag> sequence_headers, 
 	if (started && state_ == SenderState::Running)
 		return true;
 	if (started)
-		error = error_.empty() ? "RTMP sender failed to start" : error_;
+		error = diagnostic_error(DiagnosticCode::RtmpSenderStartupFailed,
+			error_.empty() ? "RTMP sender failed to start" : error_);
 	else
-		error = "Timed out while connecting to the RTMP server";
+		error = diagnostic_error(DiagnosticCode::RtmpSenderStartupFailed,
+			"Timed out while connecting to the RTMP server");
 	lock.unlock();
 	stop();
 	return false;
@@ -73,12 +77,14 @@ bool RtmpSender::enqueue(std::vector<FlvTag> tags, std::string &error)
 	{
 		std::scoped_lock lock(mutex_);
 		if (state_ != SenderState::Running && state_ != SenderState::Reconnecting) {
-			error = error_.empty() ? "RTMP sender is not running" : error_;
+			error = diagnostic_error(DiagnosticCode::RtmpSenderStartupFailed,
+				error_.empty() ? "RTMP sender is not running" : error_);
 			return false;
 		}
 	}
 	if (!queue_.try_push(std::move(tags))) {
-		error = "RTMP sender queue reached its bounded capacity";
+		error = diagnostic_error(DiagnosticCode::RtmpSenderQueueFull,
+			"RTMP sender queue reached its bounded capacity");
 		return false;
 	}
 	return true;
@@ -120,7 +126,7 @@ void RtmpSender::run() noexcept
 	try {
 		std::string error;
 		if (!connect_and_prime(error)) {
-			fail(std::move(error));
+			fail(diagnostic_error(DiagnosticCode::RtmpConnectionFailed, error));
 			return;
 		}
 		{
@@ -143,7 +149,7 @@ void RtmpSender::run() noexcept
 			if (send_tag(*tag, error))
 				continue;
 			if (!reconnect(error)) {
-				fail(std::move(error));
+				fail(diagnostic_error(DiagnosticCode::RtmpReconnectExhausted, error));
 				return;
 			}
 			awaiting_keyframe = true;
@@ -151,16 +157,17 @@ void RtmpSender::run() noexcept
 		if (connection_)
 			connection_->close();
 	} catch (const std::exception &exception) {
-		fail(std::string("RTMP sender failed: ") + exception.what());
+		fail(diagnostic_error(DiagnosticCode::RtmpSenderStartupFailed,
+			std::string("RTMP sender failed: ") + exception.what()));
 	} catch (...) {
-		fail("RTMP sender failed with an unknown error");
+		fail(diagnostic_error(DiagnosticCode::RtmpSenderStartupFailed, "RTMP sender failed with an unknown error"));
 	}
 }
 
 bool RtmpSender::connect_and_prime(std::string &error)
 {
 	if (stop_requested()) {
-		error = "RTMP connection was cancelled";
+		error = diagnostic_error(DiagnosticCode::RtmpConnectionFailed, "RTMP connection was cancelled");
 		return false;
 	}
 	if (!connection_->connect(target_, error))
@@ -214,7 +221,8 @@ bool RtmpSender::reconnect(std::string &error)
 		}
 	}
 	if (error.empty())
-		error = stop_requested() ? "RTMP reconnect was cancelled" : "RTMP reconnect attempts were exhausted";
+		error = diagnostic_error(DiagnosticCode::RtmpReconnectExhausted,
+		stop_requested() ? "RTMP reconnect was cancelled" : "RTMP reconnect attempts were exhausted");
 	return false;
 }
 

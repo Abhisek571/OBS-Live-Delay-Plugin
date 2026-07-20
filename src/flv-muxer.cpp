@@ -1,5 +1,7 @@
 #include "flv-muxer.hpp"
 
+#include "diagnostic-error.hpp"
+
 #include <limits>
 #include <stdexcept>
 #include <utility>
@@ -16,14 +18,16 @@ bool validate_avc_packet(const std::vector<std::uint8_t> &payload, std::string &
 {
 	if (payload.size() >= 3 && payload[0] == 0x00 && payload[1] == 0x00 &&
 		(payload[2] == 0x01 || (payload.size() >= 4 && payload[2] == 0x00 && payload[3] == 0x01))) {
-		error = "H.264 video packet is Annex-B instead of length-prefixed AVC";
+		error = diagnostic_error(DiagnosticCode::OutputMuxFailed,
+			"H.264 video packet is Annex-B instead of length-prefixed AVC");
 		return false;
 	}
 
 	std::size_t offset = 0;
 	while (offset < payload.size()) {
 		if (payload.size() - offset < 4) {
-			error = "H.264 AVC packet ends before its NAL-unit length field";
+			error = diagnostic_error(DiagnosticCode::OutputMuxFailed,
+				"H.264 AVC packet ends before its NAL-unit length field");
 			return false;
 		}
 		const auto nal_size = (static_cast<std::uint32_t>(payload[offset]) << 24) |
@@ -32,7 +36,8 @@ bool validate_avc_packet(const std::vector<std::uint8_t> &payload, std::string &
 			static_cast<std::uint32_t>(payload[offset + 3]);
 		offset += 4;
 		if (nal_size == 0 || nal_size > payload.size() - offset) {
-			error = "H.264 AVC packet contains an invalid NAL-unit length";
+			error = diagnostic_error(DiagnosticCode::OutputMuxFailed,
+				"H.264 AVC packet contains an invalid NAL-unit length");
 			return false;
 		}
 		offset += nal_size;
@@ -107,18 +112,19 @@ bool FlvMuxer::mux(std::vector<EncodedPacket> packets, std::vector<FlvTag> &tags
 
 	for (auto &packet : packets) {
 		if (packet.payload.empty()) {
-			error = "An encoded packet has an empty payload";
+			error = diagnostic_error(DiagnosticCode::OutputMuxFailed, "An encoded packet has an empty payload");
 			return false;
 		}
 		if (packet.kind == PacketKind::Video && !validate_avc_packet(packet.payload, error))
 			return false;
 		const auto framing_size = packet.kind == PacketKind::Video ? 5ULL : 2ULL;
 		if (packet.payload.size() > kMaxFlvPayloadSize - framing_size) {
-			error = "Encoded packet is too large for a single FLV tag";
+			error = diagnostic_error(DiagnosticCode::OutputMuxFailed,
+				"Encoded packet is too large for a single FLV tag");
 			return false;
 		}
 		if (has_base && packet.dts_us < last_dts) {
-			error = "FLV input DTS moved backwards";
+			error = diagnostic_error(DiagnosticCode::OutputMuxFailed, "FLV input DTS moved backwards");
 			return false;
 		}
 		if (!has_base) {
@@ -128,7 +134,8 @@ bool FlvMuxer::mux(std::vector<EncodedPacket> packets, std::vector<FlvTag> &tags
 
 		const auto relative_dts_us = packet.dts_us - base_dts;
 		if (relative_dts_us < 0 || relative_dts_us / 1'000 > std::numeric_limits<std::uint32_t>::max()) {
-			error = "FLV timestamp is outside the 32-bit millisecond range";
+			error = diagnostic_error(DiagnosticCode::OutputMuxFailed,
+				"FLV timestamp is outside the 32-bit millisecond range");
 			return false;
 		}
 
@@ -139,7 +146,8 @@ bool FlvMuxer::mux(std::vector<EncodedPacket> packets, std::vector<FlvTag> &tags
 		if (packet.kind == PacketKind::Video) {
 			const auto composition_ms = (packet.pts_us - packet.dts_us) / 1'000;
 			if (composition_ms < kMinCompositionTime || composition_ms > kMaxCompositionTime) {
-				error = "H.264 composition time is outside the signed 24-bit FLV range";
+				error = diagnostic_error(DiagnosticCode::OutputMuxFailed,
+					"H.264 composition time is outside the signed 24-bit FLV range");
 				return false;
 			}
 			tag.payload.reserve(packet.payload.size() + 5);

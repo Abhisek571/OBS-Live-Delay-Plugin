@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.28)
 
-project(obs-active-live-delay VERSION 0.1.39 LANGUAGES CXX)
+project(obs-active-live-delay VERSION 0.1.40 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -8,6 +8,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(ACTIVE_DELAY_BUILD_PLUGIN "Build the OBS/Qt plugin" ON)
 option(ACTIVE_DELAY_BUILD_TESTS "Build dependency-free core tests" ON)
+option(ACTIVE_DELAY_ENABLE_SCENE_PROBE "Build the P4 isolated-scene capture feasibility probe" OFF)
 
 if (ACTIVE_DELAY_BUILD_PLUGIN OR ACTIVE_DELAY_BUILD_TESTS)
     find_package(Threads REQUIRED)
@@ -16,6 +17,10 @@ if (ACTIVE_DELAY_BUILD_PLUGIN OR ACTIVE_DELAY_BUILD_TESTS)
         src/delay-controller.cpp
         src/delayed-output-watchdog.cpp
         src/flv-muxer.cpp
+        src/released-packet-dispatcher.cpp
+        src/network-packet-consumer.cpp
+		src/multistream-config.cpp
+		src/multi-target-sender.cpp
         src/bounded-sender-queue.cpp
         src/rtmp-connection.cpp
         src/rtmp-sender.cpp
@@ -56,6 +61,7 @@ if (ACTIVE_DELAY_BUILD_PLUGIN)
         src/active-delay-dock.cpp
         src/ffmpeg-rtmp-connection.cpp
         src/obs-packet-copy.cpp
+        src/scene-capture-probe.cpp
     )
 
     target_include_directories(obs-active-live-delay PRIVATE src)
@@ -71,6 +77,8 @@ if (ACTIVE_DELAY_BUILD_PLUGIN)
         $<$<CXX_COMPILER_ID:MSVC>:/W4 /EHsc /permissive- /Zc:__cplusplus>
         $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wall -Wextra -Wpedantic>
     )
+    target_compile_definitions(obs-active-live-delay PRIVATE
+        ACTIVE_DELAY_ENABLE_SCENE_PROBE=$<BOOL:${ACTIVE_DELAY_ENABLE_SCENE_PROBE}>)
 
     set_target_properties(obs-active-live-delay PROPERTIES PREFIX "")
 
@@ -109,6 +117,18 @@ if (ACTIVE_DELAY_BUILD_TESTS)
     add_executable(active-delay-output-watchdog-tests tests/delayed-output-watchdog-tests.cpp)
     target_link_libraries(active-delay-output-watchdog-tests PRIVATE active-delay-core)
     add_test(NAME active-delay-output-watchdog-tests COMMAND active-delay-output-watchdog-tests)
+
+    add_executable(active-delay-diagnostic-tests tests/diagnostic-error-tests.cpp)
+    target_link_libraries(active-delay-diagnostic-tests PRIVATE active-delay-core)
+    add_test(NAME active-delay-diagnostic-tests COMMAND active-delay-diagnostic-tests)
+
+    add_executable(active-delay-pipeline-tests tests/released-packet-dispatcher-tests.cpp)
+    target_link_libraries(active-delay-pipeline-tests PRIVATE active-delay-core)
+    add_test(NAME active-delay-pipeline-tests COMMAND active-delay-pipeline-tests)
+
+	add_executable(active-delay-multistream-tests tests/multi-target-sender-tests.cpp)
+	target_link_libraries(active-delay-multistream-tests PRIVATE active-delay-core)
+	add_test(NAME active-delay-multistream-tests COMMAND active-delay-multistream-tests)
 
     if (ACTIVE_DELAY_BUILD_PLUGIN)
         add_executable(active-delay-obs-packet-tests

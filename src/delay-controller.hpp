@@ -44,7 +44,6 @@ public:
 
 	bool set_target(Microseconds target, std::string *error = nullptr);
 	void return_live();
-	bool emergency_dump(Microseconds duration, std::string *error = nullptr);
 	void reset_for_discontinuity(std::string_view reason);
 	void begin_timestamp_epoch();
 
