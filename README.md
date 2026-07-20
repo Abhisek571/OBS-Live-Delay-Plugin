@@ -1,7 +1,7 @@
 # OBS Live Delay Plugin
 
 <p align="center">
-  <img src="docs/production-warning.svg" width="100%" alt="Beta warning: v0.1.52-beta52 has runtime acceptance on Twitch only. Other platforms and RTMP services are untested. Use the plugin dock, not OBS's normal Start Streaming button.">
+  <img src="docs/production-warning.svg" width="100%" alt="Beta: v0.1.52-beta52 — Twitch tested only; other platforms untested.">
 </p>
 
 ## v0.1.52-beta52
