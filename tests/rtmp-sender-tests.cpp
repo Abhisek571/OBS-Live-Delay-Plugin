@@ -25,12 +25,25 @@ void require(bool condition, std::string_view message)
 		throw std::runtime_error(std::string(message));
 }
 
-FlvTag video(bool keyframe, std::uint8_t value = 0x01)
+FlvTag video(bool keyframe, std::uint8_t value);
+FlvTag audio(std::uint8_t value);
+
+FlvTag video(bool keyframe)
+{
+	return video(keyframe, 0x01);
+}
+
+FlvTag video(bool keyframe, std::uint8_t value)
 {
 	return {FlvTagType::Video, 0, {static_cast<std::uint8_t>(keyframe ? 0x17 : 0x27), 0x01, 0, 0, 0, value}, keyframe};
 }
 
-FlvTag audio(std::uint8_t value = 0x01)
+FlvTag audio()
+{
+	return audio(0x01);
+}
+
+FlvTag audio(std::uint8_t value)
 {
 	return {FlvTagType::Audio, 0, {0xaf, 0x01, value}, false};
 }
@@ -164,6 +177,7 @@ void sender_reconnects_resends_headers_and_realigns_to_keyframe()
 
 	std::scoped_lock lock(state->mutex);
 	require(state->connects == 2, "one failed write should cause one reconnect");
+	require(sender.status().reconnect_count == 1, "sender status should report the reconnect attempt");
 	require(state->writes[4] == make_flv_header(), "reconnect should begin a new FLV stream");
 	require(state->writes[7] == serialize_flv_tag(video(true, 0x24)), "reconnect should discard media until the next keyframe");
 }

@@ -31,6 +31,7 @@ struct SenderStatus {
 	std::size_t queued_tags = 0;
 	std::size_t queued_bytes = 0;
 	std::uint64_t sent_bytes = 0;
+	std::uint64_t reconnect_count = 0;
 	std::string error;
 };
 
@@ -39,7 +40,7 @@ using SenderErrorCallback = std::function<void(const std::string &)>;
 
 class RtmpSender {
 public:
-	explicit RtmpSender(RtmpConnectionFactory factory, SenderConfig config = {});
+	explicit RtmpSender(RtmpConnectionFactory factory, SenderConfig config);
 	~RtmpSender();
 
 	RtmpSender(const RtmpSender &) = delete;
@@ -73,6 +74,7 @@ private:
 	std::string error_;
 	std::atomic_bool stop_requested_ = false;
 	std::atomic<std::uint64_t> sent_bytes_ = 0;
+	std::atomic<std::uint64_t> reconnect_count_ = 0;
 };
 
 } // namespace active_delay

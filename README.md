@@ -1,10 +1,10 @@
 # OBS Live Delay Plugin
 
 <p align="center">
-  <img src="docs/production-warning.svg" width="100%" alt="Beta: v0.1.52-beta52 — read the entire README before use. Twitch tested only; other platforms untested.">
+  <img src="docs/production-warning.svg" width="100%" alt="Beta: v0.1.53-beta53 — read the entire README before use. Twitch tested only; other platforms untested.">
 </p>
 
-## v0.1.52-beta52
+## v0.1.53-beta53
 
 Active Live Delay lets you add, change, remove, or reduce a stream delay from
 an OBS dock. It is still beta software: use a non-critical test stream before
@@ -12,18 +12,18 @@ relying on it.
 
 ## Requirements
 
-- OBS Studio 32.1.2 on Windows x64
+- OBS Studio 32.2.1 on Windows x64
 - OBS **Settings → Output → Output Mode: Simple**
 - An H.264 streaming encoder such as NVENC H.264, x264, QSV H.264, or AMD H.264
 - AAC streaming audio
-- A Twitch streaming service configured normally in OBS
+- One primary streaming service configured normally in OBS
 - This version has runtime acceptance on Twitch only; other platforms and RTMP
   services are untested.
 
 ## Install
 
 1. Close OBS completely.
-2. Download `obs-active-live-delay-v0.1.52-beta52-windows-x64.zip` from the release.
+2. Download `obs-active-live-delay-v0.1.53-beta53-windows-x64.zip` from the release.
 3. Extract the ZIP into the OBS installation directory, normally:
 
    ```text
@@ -39,44 +39,56 @@ Do not press OBS's normal **Start Streaming** button. The dock owns the stream c
 ### Start streaming and add delay
 
 1. In the Active Live Delay dock, select a **Holding Scene**.
-2. Press **Start Stream**.
-3. Wait until **Delayed Output** says `ACTIVE`, then confirm the platform shows you live.
-4. Enter the desired **Target Delay (sec)**.
-5. Press **Enable Delay**.
+2. Press **Start Broadcast**.
+3. Wait until **Broadcast** says `BROADCAST ACTIVE`, then confirm the platform shows you live.
+4. Enter the desired **Delay length (seconds)**.
+5. Press **Start Delay**.
 6. The holding scene is shown while the buffer builds. For example, a 15-second delay needs roughly 15 seconds of buffering.
 7. When the target is ready, the dock reports `DELAYED` and restores the original scene.
 
 ### Remove delay
 
-- Press **Close Delay** to clear the delay while keeping the broadcast running.
+- Press **Return Live (Keep Broadcasting)** to clear the delay while keeping every broadcast running.
 
 ### End the broadcast
 
-Press **Stop Stream**. This ends the streaming connection completely.
+Press **End Broadcast...** and confirm. This ends the primary and every enabled secondary broadcast.
 
-### Experimental: Native Multistream (two RTMP destinations)
+### Experimental: Native Multistream (three destinations)
 
 Native Multistream is experimental. The dock can send the same delayed
-H.264/AAC rendition to the OBS streaming service plus one manual secondary
-RTMP/RTMPS destination. Before starting, enable **Experimental Native
-Multistream secondary** and enter its name, RTMP server, and stream key. These
-settings are saved in the active OBS profile and are hidden from dock status and
-plugin logs.
+H.264/AAC rendition to the read-only primary OBS streaming service plus two
+independently enabled secondary RTMP/RTMPS destinations. Each secondary card
+offers Custom RTMP, Twitch, YouTube, and Kick labels. The label supplies setup
+guidance only: paste the current official server URL and stream key yourself.
+The plugin does not guess endpoints or read credentials from another plugin.
+
+Stream keys stay masked unless **Hold to reveal** is pressed and held. Version-2
+profile storage migrates the previous single secondary into destination 2 and
+preserves its locally stored key. Keys and complete publish URLs are excluded
+from target status and plugin diagnostics.
+
+Before start, **Preflight** shows the enabled destination count, estimated total
+upload bitrate, and known shared-rendition issues. Known hard incompatibilities
+block start with `ALD-E2016`; guidance does not claim runtime compatibility.
+Kick currently requires H.264, CBR, two-second keyframes, at most 1920x1080 at
+60 fps, and at most 8,000 kbps. Always check the platform's current official
+requirements.
 
 The primary OBS service owns the output state. A failed or slow secondary is
-shown as `FAILED` in **Targets** but must not stop the primary. Destination
-editing is disabled while the output is active. Test two non-critical platform
-destinations, reconnect, Return Live, Emergency Dump, Stop Stream, and OBS
-shutdown before relying on this beta workflow.
+shown as `FAILED` on its destination row but must not stop the primary or the
+other secondary. Rows show connection state, reconnect count, queue use, error
+code, and sent bytes. Destination editing is disabled while output is active.
+Twitch, YouTube, and Kick combined runtime acceptance remains pending.
 
 ## Button reference
 
 | Button | Effect |
 |:---|:---|
-| **Start Stream** | Starts the platform broadcast through the plugin. Press this instead of OBS **Start Streaming**. |
-| **Stop Stream** | Ends the platform broadcast completely. |
-| **Enable Delay** | Starts the configured delay while the plugin output is active. |
-| **Close Delay** | Removes the delay but keeps streaming. |
+| **Start Broadcast** | Starts the primary and every enabled secondary through the plugin. Press this instead of OBS **Start Streaming**. |
+| **End Broadcast...** | Requires confirmation, then ends the primary and every enabled secondary. |
+| **Start Delay** | Starts the configured delay while the plugin output is active. |
+| **Return Live (Keep Broadcasting)** | Removes the delay but keeps all platform connections online. |
 
 ## Before you use it
 
@@ -86,9 +98,10 @@ shutdown before relying on this beta workflow.
 - This is still a beta. Test with a non-critical stream before relying on it.
 - The current version has runtime acceptance on Twitch only. Do not infer
   support for any other platform or RTMP service.
-- Close Delay, reconnect behaviour, long sessions, and clean shutdown need broader testing.
-- Native Multistream is experimental and has automated fake-server coverage
-  only; recorded two-platform runtime acceptance remains required.
+- Return Live, reconnect behaviour, long sessions, and clean shutdown need broader testing.
+- Native Multistream is experimental and has automated three-destination
+  fake-server coverage only. Recorded Twitch, YouTube, and Kick runtime
+  acceptance remains required.
 - If the dock reports an `ALD-E####` error during testing, record the code and
   safe message with the OBS log. See the [error-code guide](docs/ERROR-CODES.md).
 
@@ -96,6 +109,7 @@ shutdown before relying on this beta workflow.
 
 - [Build and test instructions](docs/BUILDING.md)
 - [Technical design and current development notes](docs/TECHNICAL-NOTES.md)
+- [Final combined multistream acceptance](docs/FINAL-MULTISTREAM-ACCEPTANCE.md)
 
 ## License
 

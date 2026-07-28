@@ -2,11 +2,12 @@
 
 ## Status
 
-Proposed; Compatibility Source work is skipped/deferred by owner direction on
-2026-07-21 for the Direct Single workflow. This is not a feasibility pass.
-Implementation is not authorized by this document. The source path must pass
-the feasibility gate described below before it becomes an accepted
-architecture.
+Accepted as a gated future architecture. Owner direction on 2026-07-21 defers
+Compatibility Source, Aitum, SE.Live, and the feasibility probe while the
+plugin-owned Native Multistream path is completed. This is not a feasibility
+pass and does not authorize source-feature implementation. If the owner resumes
+this scope, owner direction on 2026-07-28 still defers manual/runtime testing
+until the combined final acceptance gate.
 
 ## Context
 
@@ -18,7 +19,7 @@ owned by Aitum Multistream, SE.Live, and similar plugins.
 The compatibility requirement is broader than opening several sockets:
 
 - every destination must observe the same delayed programme timeline;
-- Close Delay and discontinuities must remain
+- Return Live and discontinuities must remain
   synchronized;
 - a slow or failed destination must not stall healthy destinations;
 - Aitum and SE.Live should be able to own their normal OBS outputs when possible;
@@ -134,6 +135,11 @@ is about 11.25 MB for the same duration before audio and container overhead.
   cannot meet the acceptance criteria.
 
 ## Source feasibility gate
+
+The gate below remains the technical standard. During implementation, satisfy
+it with automated, synthetic, or agent-verifiable evidence where possible. Any
+owner-operated steps remain pending until the combined final manual acceptance
+gate; do not ask the owner for phase-by-phase tests.
 
 The Delayed Program Source architecture may advance only if a prototype proves:
 

@@ -17,7 +17,7 @@ class NetworkPacketConsumer final : public ReleasedPacketConsumer {
 public:
 	using FailureCallback = std::function<void(const std::string &)>;
 
-	explicit NetworkPacketConsumer(RtmpConnectionFactory factory, SenderConfig config = {});
+	explicit NetworkPacketConsumer(RtmpConnectionFactory factory, SenderConfig config);
 
 	bool start(RtmpTarget target, FlvCodecHeaders headers, FailureCallback on_failure, std::string &error);
 	void consume(const std::shared_ptr<const ReleasedPacketBatch> &batch) override;

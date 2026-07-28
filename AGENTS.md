@@ -2,7 +2,7 @@
 
 ## Scope and safety
 
-- This is a Windows x64 OBS Studio 32.1.2 plugin. Preserve the working direct
+- This is a Windows x64 OBS Studio 32.2.1 plugin. Preserve the working direct
   single-output path while adding compatibility work behind explicit modes.
 - Never restore the normal-OBS-output handoff. Stopping that output can end a
   live platform broadcast.
@@ -17,6 +17,14 @@
   non-secret diagnostic error codes for new operational failure paths. Do not
   run or claim the full manual Twitch acceptance workflow on the owner's
   behalf.
+- Owner direction on 2026-07-28 defers all owner-operated manual and runtime
+  testing until every authorized implementation phase and its automated checks
+  are complete. Do not request phase-by-phase manual testing. Keep manual items
+  pending for one combined final acceptance gate, and do not claim platform
+  support, production readiness, or release acceptance before that evidence.
+- Continue automated unit, component, integration, build, and static checks
+  during each implementation phase. The manual-testing deferral does not waive
+  automated verification or final runtime evidence.
 
 ## Communication
 

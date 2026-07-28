@@ -6,11 +6,24 @@ as a compatibility feature. It mirrors a selected **Delay Input** scene's
 render and its public-libobs scene audio mix. It does not decode packets,
 buffer raw frames, delay media, or open a network connection.
 
-The normal plugin build leaves the probe out. Build the local feasibility
-binary with:
+The normal plugin build leaves the probe out. Configure the dedicated probe
+build with the same OBS SDK prefix and OBS CMake finder path used by the full
+plugin build. In the maintained Windows environment:
 
 ```powershell
-& "C:\Qt\Tools\CMake_64\bin\cmake.exe" -S . -B build-p4-probe -DACTIVE_DELAY_ENABLE_SCENE_PROBE=ON
+$obsSource = "C:/Users/AKS/Documents/OBS delay plugin/third_party/obs-studio"
+$obsBuild = "$obsSource/build_x64_322"
+$obsDeps = "$obsSource/.deps/obs-deps-2026-07-15-x64"
+$obsQt = "$obsSource/.deps/obs-deps-qt6-2026-07-15-x64"
+$prefix = "$obsBuild;$obsBuild/frontend/api;$obsBuild/deps/w32-pthreads;$obsDeps;$obsQt"
+
+& "C:\Qt\Tools\CMake_64\bin\cmake.exe" -S . -B build-p4-probe `
+  "-DCMAKE_PREFIX_PATH=$prefix" `
+  "-DCMAKE_MODULE_PATH=$obsSource/cmake/finders" `
+  "-DSIMDe_INCLUDE_DIR=$obsDeps/include" `
+  -DACTIVE_DELAY_BUILD_PLUGIN=ON `
+  -DACTIVE_DELAY_BUILD_TESTS=ON `
+  -DACTIVE_DELAY_ENABLE_SCENE_PROBE=ON
 & "C:\Qt\Tools\CMake_64\bin\cmake.exe" --build build-p4-probe --config Release
 & "C:\Qt\Tools\CMake_64\bin\ctest.exe" --test-dir build-p4-probe -C Release --output-on-failure
 ```

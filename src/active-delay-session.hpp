@@ -1,32 +1,23 @@
 #pragma once
 
 #include "delay-controller.hpp"
-#include "flv-muxer.hpp"
 #include "multistream-config.hpp"
 #include "multi-target-sender.hpp"
 #include "released-packet-dispatcher.hpp"
 
-#include <atomic>
 #include <cstdint>
 #include <mutex>
-#include <optional>
 #include <string>
 
 namespace active_delay {
 
 enum class OperatingMode { DirectSingle, NativeMultistream, CompatibilitySource };
 
-// These three groups deliberately have separate ownership and locking rules.
-// The controller owns delayed media, codec state belongs to capture, and the
-// lifecycle owns consumers. They must not be mutated as one giant session blob.
+// These groups deliberately have separate ownership and locking rules. The
+// controller owns delayed media, and the lifecycle owns consumers. They must
+// not be mutated as one giant session blob.
 struct ControllerResponsibility {
 	DelayController delay;
-	std::atomic_bool preserve_on_next_output_start = false;
-};
-
-struct CodecResponsibility {
-	std::mutex mutex;
-	std::optional<FlvCodecHeaders> cached_headers;
 };
 
 struct ConsumerLifecycleResponsibility {
@@ -114,7 +105,6 @@ public:
 	}
 
 	ControllerResponsibility controller;
-	CodecResponsibility codec;
 	ConsumerLifecycleResponsibility consumers;
 	MultistreamResponsibility multistream;
 };

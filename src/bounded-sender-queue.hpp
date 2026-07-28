@@ -24,11 +24,11 @@ struct SenderQueueStatus {
 
 class BoundedSenderQueue {
 public:
-	explicit BoundedSenderQueue(SenderQueueLimits limits = {});
+	explicit BoundedSenderQueue(SenderQueueLimits limits);
 
 	bool try_push(std::vector<FlvTag> tags);
 	[[nodiscard]] std::optional<FlvTag> wait_pop();
-	void close(bool discard_pending = false) noexcept;
+	void close(bool discard_pending) noexcept;
 	void reset() noexcept;
 	[[nodiscard]] SenderQueueStatus status() const;
 
