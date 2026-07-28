@@ -110,6 +110,7 @@ Twitch, YouTube, and Kick combined runtime acceptance remains pending.
 - [Build and test instructions](docs/BUILDING.md)
 - [Technical design and current development notes](docs/TECHNICAL-NOTES.md)
 - [Final combined multistream acceptance](docs/FINAL-MULTISTREAM-ACCEPTANCE.md)
+- [Project wiki](https://github.com/Abhisek571/OBS-Live-Delay-Plugin/wiki)
 
 ## License
 
