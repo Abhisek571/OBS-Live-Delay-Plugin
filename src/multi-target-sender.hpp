@@ -31,7 +31,7 @@ class MultiTargetSender final : public ReleasedPacketConsumer {
 public:
 	using PrimaryFailureCallback = std::function<void(const std::string &)>;
 
-	explicit MultiTargetSender(RtmpConnectionFactory factory, SenderConfig config = {});
+	explicit MultiTargetSender(RtmpConnectionFactory factory, SenderConfig config);
 	bool start(RtmpTarget primary, std::string primary_name, MultistreamConfiguration configuration,
 		FlvCodecHeaders headers, PrimaryFailureCallback on_primary_failure, std::string &error);
 	void consume(const std::shared_ptr<const ReleasedPacketBatch> &batch) override;

@@ -45,6 +45,7 @@ bool RtmpSender::start(RtmpTarget target, std::vector<FlvTag> sequence_headers, 
 	queue_.reset();
 	stop_requested_.store(false, std::memory_order_release);
 	sent_bytes_.store(0, std::memory_order_relaxed);
+	reconnect_count_.store(0, std::memory_order_relaxed);
 	{
 		std::scoped_lock lock(mutex_);
 		target_ = std::move(target);
@@ -118,7 +119,8 @@ SenderStatus RtmpSender::status() const
 {
 	const auto queue = queue_.status();
 	std::scoped_lock lock(mutex_);
-	return {state_, queue.tags, queue.bytes, sent_bytes_.load(std::memory_order_relaxed), error_};
+	return {state_, queue.tags, queue.bytes, sent_bytes_.load(std::memory_order_relaxed),
+		reconnect_count_.load(std::memory_order_relaxed), error_};
 }
 
 void RtmpSender::run() noexcept
@@ -203,6 +205,7 @@ bool RtmpSender::reconnect(std::string &error)
 {
 	connection_->close();
 	for (std::size_t attempt = 0; attempt < config_.reconnect_attempts && !stop_requested(); ++attempt) {
+		reconnect_count_.fetch_add(1, std::memory_order_relaxed);
 		{
 			std::scoped_lock lock(mutex_);
 			state_ = SenderState::Reconnecting;

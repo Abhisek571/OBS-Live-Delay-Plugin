@@ -135,7 +135,7 @@ bool start_pipeline(OutputData *context, FlvCodecHeaders headers, std::string &e
 		if (mode == OperatingMode::NativeMultistream) {
 			multi_target_sender = std::make_shared<MultiTargetSender>([] {
 				return std::make_unique<FfmpegRtmpConnection>();
-			});
+			}, SenderConfig{});
 			if (!multi_target_sender->start(context->target, "Primary OBS service", context->session->multistream.snapshot(),
 				std::move(headers),
 				[context](const std::string &sender_error) {
@@ -150,7 +150,7 @@ bool start_pipeline(OutputData *context, FlvCodecHeaders headers, std::string &e
 		} else {
 			auto network_consumer = std::make_shared<NetworkPacketConsumer>([] {
 				return std::make_unique<FfmpegRtmpConnection>();
-			});
+			}, SenderConfig{});
 			if (!network_consumer->start(context->target, std::move(headers),
 				[context](const std::string &sender_error) {
 					signal_failure(context, DiagnosticCode::RtmpConnectionFailed, sender_error, OBS_OUTPUT_DISCONNECTED);
@@ -192,12 +192,8 @@ bool output_start(void *data)
 	context->consumer_id = 0;
 	context->consumer.reset();
 	context->multi_target_sender.reset();
-	const auto preserve_controller =
-		context->session->controller.preserve_on_next_output_start.exchange(false, std::memory_order_acq_rel);
-	if (!preserve_controller) {
-		context->session->controller.delay.return_live();
-		context->session->controller.delay.take_ready_packets();
-	}
+	context->session->controller.delay.return_live();
+	context->session->controller.delay.take_ready_packets();
 	context->failure_signaled.store(false, std::memory_order_release);
 	context->pipeline_ready.store(false, std::memory_order_release);
 	context->codec_header_wait_frames.store(0, std::memory_order_release);
@@ -240,32 +236,12 @@ bool output_start(void *data)
 	context->target.username = connect_info(service, OBS_SERVICE_CONNECT_INFO_USERNAME);
 	context->target.password = connect_info(service, OBS_SERVICE_CONNECT_INFO_PASSWORD);
 
-	std::string error;
-	if (preserve_controller) {
-		FlvCodecHeaders headers;
-		{
-			std::scoped_lock lock(context->session->codec.mutex);
-			if (context->session->codec.cached_headers)
-				headers = *context->session->codec.cached_headers;
-			else
-				error = diagnostic_error(DiagnosticCode::OutputCodecHeadersUnavailable,
-					"No cached H.264/AAC codec configuration is available for the delayed-output handoff");
-		}
-		if (!error.empty() || !start_pipeline(context, std::move(headers), error)) {
-			context->session->end_consumer_lifecycle();
-			obs_output_set_last_error(context->output, error.c_str());
-			return false;
-		}
-	} else {
-		blog(LOG_INFO,
-			"[active-live-delay] Direct capture initialized; waiting for the first H.264 frame before RTMP connect");
-	}
+	blog(LOG_INFO,
+		"[active-live-delay] Direct capture initialized; waiting for the first H.264 frame before RTMP connect");
 
 	context->active.store(true, std::memory_order_release);
 	context->capture_started.store(true, std::memory_order_release);
 	context->packet_epoch = context->session->begin_packet_epoch();
-	if (preserve_controller)
-		context->session->controller.delay.begin_timestamp_epoch();
 	if (!obs_output_begin_data_capture(context->output, 0)) {
 		context->active.store(false, std::memory_order_release);
 		context->capture_started.store(false, std::memory_order_release);
@@ -282,10 +258,7 @@ bool output_start(void *data)
 		blog(LOG_ERROR, "[active-live-delay] %s", capture_error.c_str());
 		return false;
 	}
-	if (preserve_controller)
-		clear_cached_codec_headers(*context->session);
-	blog(LOG_INFO, preserve_controller ? "[active-live-delay] Custom output is connected and capturing encoded packets"
-					  : "[active-live-delay] Custom output is capturing; RTMP connect is pending codec headers");
+	blog(LOG_INFO, "[active-live-delay] Custom output is capturing; RTMP connect is pending codec headers");
 	return true;
 }
 
@@ -401,22 +374,6 @@ obs_output_info output_info = {
 	.protocols = "RTMP;RTMPS",
 };
 } // namespace
-
-bool cache_active_codec_headers(obs_output_t *output, ActiveDelaySession &session, std::string &error)
-{
-	FlvCodecHeaders headers;
-	if (!read_codec_headers(output, headers, error))
-		return false;
-	std::scoped_lock lock(session.codec.mutex);
-	session.codec.cached_headers = std::move(headers);
-	return true;
-}
-
-void clear_cached_codec_headers(ActiveDelaySession &session)
-{
-	std::scoped_lock lock(session.codec.mutex);
-	session.codec.cached_headers.reset();
-}
 
 void register_active_delay_output(std::shared_ptr<ActiveDelaySession> session)
 {

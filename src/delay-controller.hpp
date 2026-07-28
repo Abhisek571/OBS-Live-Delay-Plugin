@@ -40,9 +40,11 @@ struct ControllerStatus {
 
 class DelayController {
 public:
-	explicit DelayController(BufferLimits limits = {});
+	DelayController();
+	explicit DelayController(BufferLimits limits);
 
-	bool set_target(Microseconds target, std::string *error = nullptr);
+	bool set_target(Microseconds target);
+	bool set_target(Microseconds target, std::string *error);
 	void return_live();
 	void reset_for_discontinuity(std::string_view reason);
 	void begin_timestamp_epoch();

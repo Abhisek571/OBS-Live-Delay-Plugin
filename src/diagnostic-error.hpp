@@ -35,6 +35,7 @@ enum class DiagnosticCode {
 	PacketDiscontinuityNotificationFailed,
 	MultistreamConfigurationInvalid,
 	MultiTargetStartupFailed,
+	MultistreamPreflightFailed,
 	RtmpTargetInvalid,
 	RtmpConnectionFailed,
 	RtmpWriteFailed,
@@ -46,6 +47,14 @@ enum class DiagnosticCode {
 	OutputNoFrames,
 	SceneProbeInputInvalid,
 	SceneProbeRecursionDetected,
+	HoldingSceneInvalid,
+	HoldingSceneInterrupted,
+	ProgramSceneUnavailable,
+	DockRegistrationFailed,
+	OutputControlConflict,
+	DelayControlUnavailable,
+	SettingsSaveFailed,
+	HotkeyRegistrationFailed,
 };
 
 constexpr std::string_view diagnostic_code(DiagnosticCode code) noexcept
@@ -77,6 +86,7 @@ constexpr std::string_view diagnostic_code(DiagnosticCode code) noexcept
 	case DiagnosticCode::PacketDiscontinuityNotificationFailed: return "ALD-E2013";
 	case DiagnosticCode::MultistreamConfigurationInvalid: return "ALD-E2014";
 	case DiagnosticCode::MultiTargetStartupFailed: return "ALD-E2015";
+	case DiagnosticCode::MultistreamPreflightFailed: return "ALD-E2016";
 	case DiagnosticCode::RtmpTargetInvalid: return "ALD-E3001";
 	case DiagnosticCode::RtmpConnectionFailed: return "ALD-E3002";
 	case DiagnosticCode::RtmpWriteFailed: return "ALD-E3003";
@@ -88,6 +98,14 @@ constexpr std::string_view diagnostic_code(DiagnosticCode code) noexcept
 	case DiagnosticCode::OutputNoFrames: return "ALD-E4002";
 	case DiagnosticCode::SceneProbeInputInvalid: return "ALD-E5001";
 	case DiagnosticCode::SceneProbeRecursionDetected: return "ALD-E5002";
+	case DiagnosticCode::HoldingSceneInvalid: return "ALD-E5003";
+	case DiagnosticCode::HoldingSceneInterrupted: return "ALD-E5004";
+	case DiagnosticCode::ProgramSceneUnavailable: return "ALD-E5005";
+	case DiagnosticCode::DockRegistrationFailed: return "ALD-E6001";
+	case DiagnosticCode::OutputControlConflict: return "ALD-E6002";
+	case DiagnosticCode::DelayControlUnavailable: return "ALD-E6003";
+	case DiagnosticCode::SettingsSaveFailed: return "ALD-E6004";
+	case DiagnosticCode::HotkeyRegistrationFailed: return "ALD-E6005";
 	}
 	return "ALD-E0000";
 }

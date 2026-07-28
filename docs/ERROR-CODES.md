@@ -10,10 +10,11 @@ Never include a stream key, password, or the full RTMP publish URL in a report.
 | Code range | Meaning | Examples |
 |:---|:---|:---|
 | `ALD-E1001`–`ALD-E1011` | Direct-output setup | unsupported Output mode, missing service, unavailable H.264/AAC encoder, output creation/start failure |
-| `ALD-E2001`–`ALD-E2015` | OBS capture and encoded-media pipeline | capture cannot start, encoder/codec-header failure, controller or FLV mux failure; mode, consumer, and multistream configuration/startup failures |
+| `ALD-E2001`–`ALD-E2016` | OBS capture and encoded-media pipeline | capture cannot start, encoder/codec-header failure, controller or FLV mux failure; mode, consumer, multistream configuration/startup, and preflight failures |
 | `ALD-E3001`–`ALD-E3007` | RTMP transport | invalid service target, connection/write failure, sender startup, queue saturation, reconnect exhaustion, or isolated secondary failure |
 | `ALD-E4001`–`ALD-E4002` | Output health watchdog | output stopped unexpectedly, no encoded video frames within the startup window |
-| `ALD-E5001`–`ALD-E5002` | P4 scene-capture feasibility probe | invalid selected scene or blocked recursive scene graph |
+| `ALD-E5001`–`ALD-E5005` | Scene handling | invalid/recursive P4 probe input, invalid/interrupted Holding Scene, or unavailable saved Program Scene |
+| `ALD-E6001`–`ALD-E6005` | Dock and operator controls | dock/hotkey registration, conflicting broadcast or delay actions, or destination-settings save failure |
 
 The code meanings are intentionally stable once released. New failures should
 receive a new code rather than repurposing an existing one.
@@ -48,6 +49,7 @@ receive a new code rather than repurposing an existing one.
 | `ALD-E2013` | Discontinuity notification failed | A consumer could not process an epoch/discontinuity notification. |
 | `ALD-E2014` | Native Multistream configuration invalid | Stop the output, then check the saved secondary name, RTMP server, and key without sharing them. |
 | `ALD-E2015` | Native Multistream primary startup failed | Check the primary service and target configuration; do not report credentials. |
+| `ALD-E2016` | Native Multistream preflight failed | The shared rendition exceeds a known hard limit for an enabled platform. Correct the listed OBS output setting before start. |
 | `ALD-E3001` | RTMP target invalid | Check the service configuration without exposing the publish URL or key. |
 | `ALD-E3002` | RTMP connection failed | Check network and service reachability; keep credentials private. |
 | `ALD-E3003` | RTMP write failed | The connected server stopped accepting FLV data. |
@@ -59,3 +61,11 @@ receive a new code rather than repurposing an existing one.
 | `ALD-E4002` | Startup received no video frames | Check capture/encoder progress in the OBS log. |
 | `ALD-E5001` | Scene-capture probe input invalid | Select an existing scene as Delay Input. The P4 probe accepts scenes only. |
 | `ALD-E5002` | Scene-capture probe recursion blocked | Keep the selected Delay Input separate from every scene containing the probe. |
+| `ALD-E5003` | Holding Scene invalid | Select an existing Holding Scene that differs from the current Program Scene. |
+| `ALD-E5004` | Holding Scene interrupted | Keep the selected Holding Scene active while delay builds, then retry Start Delay. |
+| `ALD-E5005` | Saved Program Scene unavailable | Restore or select the intended Program Scene, then retry Start Delay. |
+| `ALD-E6001` | Dock registration failed | Reopen OBS and check the plugin installation and OBS log. |
+| `ALD-E6002` | Broadcast control conflict | Stop normal OBS streaming or the already-active plugin broadcast before retrying the requested start action. |
+| `ALD-E6003` | Delay control unavailable | Start the plugin broadcast first, or finish/remove the current delay before retrying the delay action. |
+| `ALD-E6004` | Destination settings save failed | Check that the active OBS profile is writable before starting the broadcast. |
+| `ALD-E6005` | Hotkey registration failed | Use the dock controls; check OBS hotkey configuration and the OBS log before assigning the shortcuts again. |

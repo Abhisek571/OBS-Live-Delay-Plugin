@@ -28,7 +28,14 @@ bool checked_subtract(std::int64_t left, std::int64_t right, std::int64_t &resul
 }
 }
 
+DelayController::DelayController() : DelayController(BufferLimits{}) {}
+
 DelayController::DelayController(BufferLimits limits) : limits_(limits) {}
+
+bool DelayController::set_target(Microseconds target)
+{
+	return set_target(target, nullptr);
+}
 
 bool DelayController::set_target(Microseconds target, std::string *error)
 {
@@ -46,13 +53,19 @@ bool DelayController::set_target(Microseconds target, std::string *error)
 	if (target == kNoDelay) {
 		state_ = DelayState::ReturningLive;
 		buffered_.clear();
+		ready_.clear();
 		buffered_bytes_ = 0;
 		reset_timestamp_tracking_locked();
 		state_ = DelayState::Live;
 		return true;
 	}
 
-	if (state_ == DelayState::Live || target > duration_locked()) {
+	if (state_ == DelayState::Live) {
+		ready_.clear();
+		state_ = DelayState::BuildingDelay;
+		return true;
+	}
+	if (target > duration_locked()) {
 		state_ = DelayState::BuildingDelay;
 		return true;
 	}
@@ -69,6 +82,7 @@ void DelayController::return_live()
 	std::scoped_lock lock(mutex_);
 	state_ = DelayState::ReturningLive;
 	buffered_.clear();
+	ready_.clear();
 	buffered_bytes_ = 0;
 	target_delay_ = kNoDelay;
 	error_.clear();

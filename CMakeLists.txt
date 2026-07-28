@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.28)
 
-project(obs-active-live-delay VERSION 0.1.52 LANGUAGES CXX)
+project(obs-active-live-delay VERSION 0.1.53 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -20,10 +20,12 @@ if (ACTIVE_DELAY_BUILD_PLUGIN OR ACTIVE_DELAY_BUILD_TESTS)
         src/released-packet-dispatcher.cpp
         src/network-packet-consumer.cpp
 		src/multistream-config.cpp
+		src/multistream-preflight.cpp
 		src/multi-target-sender.cpp
         src/bounded-sender-queue.cpp
         src/rtmp-connection.cpp
         src/rtmp-sender.cpp
+		src/scene-switch-policy.cpp
     )
     target_include_directories(active-delay-core PUBLIC src)
     target_link_libraries(active-delay-core PUBLIC Threads::Threads)
@@ -59,6 +61,7 @@ if (ACTIVE_DELAY_BUILD_PLUGIN)
         src/plugin-main.cpp
         src/active-delay-output.cpp
         src/active-delay-dock.cpp
+		src/destination-card-widget.cpp
         src/ffmpeg-rtmp-connection.cpp
         src/obs-packet-copy.cpp
         src/scene-capture-probe.cpp
@@ -130,7 +133,22 @@ if (ACTIVE_DELAY_BUILD_TESTS)
 	target_link_libraries(active-delay-multistream-tests PRIVATE active-delay-core)
 	add_test(NAME active-delay-multistream-tests COMMAND active-delay-multistream-tests)
 
+	add_executable(active-delay-scene-switch-tests tests/scene-switch-policy-tests.cpp)
+	target_link_libraries(active-delay-scene-switch-tests PRIVATE active-delay-core)
+	add_test(NAME active-delay-scene-switch-tests COMMAND active-delay-scene-switch-tests)
+
     if (ACTIVE_DELAY_BUILD_PLUGIN)
+		add_executable(active-delay-dock-ui-tests
+			tests/destination-card-widget-tests.cpp
+			src/destination-card-widget.cpp)
+		target_include_directories(active-delay-dock-ui-tests PRIVATE src)
+		target_link_libraries(active-delay-dock-ui-tests PRIVATE active-delay-core Qt6::Widgets)
+		add_test(NAME active-delay-dock-ui-tests COMMAND active-delay-dock-ui-tests)
+		set_property(TEST active-delay-dock-ui-tests PROPERTY ENVIRONMENT "QT_QPA_PLATFORM=minimal")
+		set_property(TEST active-delay-dock-ui-tests PROPERTY ENVIRONMENT_MODIFICATION
+			"PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Widgets>")
+		set_property(TEST active-delay-dock-ui-tests PROPERTY TIMEOUT 10)
+
         add_executable(active-delay-obs-packet-tests
             tests/obs-packet-copy-tests.cpp
             src/obs-packet-copy.cpp)

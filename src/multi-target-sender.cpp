@@ -2,11 +2,30 @@
 
 #include "diagnostic-error.hpp"
 
+#include <exception>
 #include <future>
 #include <stdexcept>
 #include <utility>
 
 namespace active_delay {
+namespace {
+RtmpConnectionFactory assign_connection(RtmpConnectionFactory &factory)
+{
+	auto connection = std::make_shared<std::unique_ptr<IRtmpConnection>>();
+	std::exception_ptr creation_error;
+	try {
+		*connection = factory();
+	} catch (...) {
+		creation_error = std::current_exception();
+	}
+	return [connection = std::move(connection), creation_error]() mutable {
+		if (creation_error)
+			std::rethrow_exception(creation_error);
+		return std::move(*connection);
+	};
+}
+} // namespace
+
 MultiTargetSender::MultiTargetSender(RtmpConnectionFactory factory, SenderConfig config)
 	: factory_(std::move(factory)), config_(config)
 {
@@ -16,16 +35,8 @@ bool MultiTargetSender::start(RtmpTarget primary, std::string primary_name, Mult
 	FlvCodecHeaders headers, PrimaryFailureCallback on_primary_failure, std::string &error)
 {
 	stop();
-	if (!validate_multistream_configuration(configuration, error))
+	if (!validate_multistream_configuration(configuration, primary, error))
 		return false;
-	// Starting targets concurrently must not require connection factories supplied
-	// by integrations or tests to be re-entrant.  Only construction is
-	// serialized; each resulting sender still connects and runs independently.
-	auto factory_mutex = std::make_shared<std::mutex>();
-	auto synchronized_factory = [factory = factory_, factory_mutex]() mutable {
-		std::scoped_lock lock(*factory_mutex);
-		return factory();
-	};
 
 	struct PendingWorker {
 		Worker worker;
@@ -33,12 +44,12 @@ bool MultiTargetSender::start(RtmpTarget primary, std::string primary_name, Mult
 	};
 	std::vector<PendingWorker> pending;
 	pending.push_back({{"primary", primary_name.empty() ? "Primary OBS service" : std::move(primary_name), true,
-		std::make_shared<NetworkPacketConsumer>(synchronized_factory, config_)}, std::move(primary)});
+		std::make_shared<NetworkPacketConsumer>(assign_connection(factory_), config_)}, std::move(primary)});
 	for (const auto &destination : configuration.secondary_destinations) {
 		if (!destination.enabled)
 			continue;
 		pending.push_back({{destination.id, safe_destination_label(destination), false,
-			std::make_shared<NetworkPacketConsumer>(synchronized_factory, config_)}, destination.target});
+			std::make_shared<NetworkPacketConsumer>(assign_connection(factory_), config_)}, destination.target});
 	}
 	std::vector<Worker> workers;
 	workers.reserve(pending.size());

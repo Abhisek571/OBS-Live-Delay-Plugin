@@ -90,10 +90,22 @@ void returning_live_clears_the_buffer()
 	require(controller.set_target(2s), "2-second delay should be accepted");
 	controller.ingest(video(0, true));
 	controller.ingest(video(2'000'000, true));
+	controller.ingest(video(3'000'000, true));
 	controller.return_live();
 	const auto state = controller.status();
 	require(state.state == DelayState::Live, "returning live should reset the state");
 	require(state.current_delay == 0us, "returning live should clear buffered delay");
+	require(controller.take_ready_packets().empty(),
+		"returning live must discard delayed packets released concurrently before the transition");
+}
+
+void starting_delay_discards_pending_live_packets()
+{
+	DelayController controller;
+	controller.ingest(video(0, true));
+	require(controller.set_target(2s), "2-second delay should be accepted");
+	require(controller.take_ready_packets().empty(),
+		"starting delay must not leak a pending live packet across the transition");
 }
 
 void refuses_over_limit_target()
@@ -233,6 +245,7 @@ int main()
 		preserves_live_timestamps_and_drains_each_packet_once();
 		releases_delayed_packets_in_ingest_order();
 		returning_live_clears_the_buffer();
+		starting_delay_discards_pending_live_packets();
 		refuses_over_limit_target();
 		refuses_to_start_delayed_playback_without_a_keyframe();
 		enforces_the_memory_limit();

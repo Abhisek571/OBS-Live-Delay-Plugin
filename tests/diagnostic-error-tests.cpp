@@ -35,12 +35,30 @@ void diagnostic_codes_are_stable_and_visible()
 		"multistream configuration code must remain stable");
 	require(diagnostic_code(DiagnosticCode::MultiTargetStartupFailed) == "ALD-E2015",
 		"multistream startup code must remain stable");
+	require(diagnostic_code(DiagnosticCode::MultistreamPreflightFailed) == "ALD-E2016",
+		"multistream preflight code must remain stable");
 	require(diagnostic_code(DiagnosticCode::SecondaryTargetFailed) == "ALD-E3007",
 		"secondary target code must remain stable");
 	require(diagnostic_code(DiagnosticCode::SceneProbeInputInvalid) == "ALD-E5001",
 		"scene-probe input code must remain stable");
 	require(diagnostic_code(DiagnosticCode::SceneProbeRecursionDetected) == "ALD-E5002",
 		"scene-probe recursion code must remain stable");
+	require(diagnostic_code(DiagnosticCode::HoldingSceneInvalid) == "ALD-E5003",
+		"holding-scene validation code must remain stable");
+	require(diagnostic_code(DiagnosticCode::HoldingSceneInterrupted) == "ALD-E5004",
+		"holding-scene interruption code must remain stable");
+	require(diagnostic_code(DiagnosticCode::ProgramSceneUnavailable) == "ALD-E5005",
+		"program-scene restoration code must remain stable");
+	require(diagnostic_code(DiagnosticCode::DockRegistrationFailed) == "ALD-E6001",
+		"dock registration code must remain stable");
+	require(diagnostic_code(DiagnosticCode::OutputControlConflict) == "ALD-E6002",
+		"output control conflict code must remain stable");
+	require(diagnostic_code(DiagnosticCode::DelayControlUnavailable) == "ALD-E6003",
+		"delay control availability code must remain stable");
+	require(diagnostic_code(DiagnosticCode::SettingsSaveFailed) == "ALD-E6004",
+		"settings save code must remain stable");
+	require(diagnostic_code(DiagnosticCode::HotkeyRegistrationFailed) == "ALD-E6005",
+		"hotkey registration code must remain stable");
 }
 
 void diagnostic_error_prefixes_once()
