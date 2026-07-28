@@ -1,7 +1,8 @@
 # Changelog
 
 Release labels use `v0.1.NN-betaNN` for beta `NN`; for example, Beta 5 uses
-`v0.1.5-beta5` and Beta 5.2 uses `v0.1.52-beta52`.
+`v0.1.5-beta5`, Beta 5.2 uses `v0.1.52-beta52`, and Beta 5.3 uses
+`v0.1.53-beta53`.
 
 ## v0.1.53-beta53
 
