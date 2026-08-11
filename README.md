@@ -1,7 +1,7 @@
 # OBS Live Delay Plugin
 
 <p align="center">
-  <img src="docs/production-warning.svg" width="100%" alt="Beta: v0.1.53-beta53 — read the entire README before use. Twitch tested only; other platforms untested.">
+  <img src="docs/production-warning.svg" width="100%" alt="Beta: v0.1.53-beta53 — read the entire README before use. Twitch tested only; other platforms untested. Working on the next update">
 </p>
 
 ## v0.1.53-beta53
