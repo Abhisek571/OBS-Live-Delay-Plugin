@@ -6,7 +6,7 @@
 
 ## v0.1.53-beta53
 
-Active Live Delay lets you add, change, remove, or reduce a stream delay from
+OBS Live Delay Plugin lets you add, change, remove, or reduce a stream delay from
 an OBS dock. It is still beta software: use a non-critical test stream before
 relying on it.
 
