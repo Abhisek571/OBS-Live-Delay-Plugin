@@ -13,8 +13,7 @@
 /vendor/
 /third_party/
 
-# Local agent and IDE files
-/.agents/
+# Local IDE files
 /.vs/
 /.vscode/
 *.user

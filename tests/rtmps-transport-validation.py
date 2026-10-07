@@ -91,7 +91,7 @@ def main():
     parser.add_argument("openssl")
     parser.add_argument("--case", choices=["all", "reject", "cafile", "deadline", "cancel", "drop", "sender-stop", "owner-stop", "owner-reject", "isolation"], default="all")
     args = parser.parse_args()
-    # Hermes scratch when provided; normal test runners may supply their own TMPDIR.
+    # Use TMPDIR when the test runner provides one.
     with tempfile.TemporaryDirectory(prefix="active-delay-tls-", dir=os.environ.get("TMPDIR")) as temp:
         cert, key = Path(temp) / "cert.pem", Path(temp) / "key.pem"
         subprocess.run([args.openssl, "req", "-x509", "-newkey", "rsa:2048", "-nodes",
