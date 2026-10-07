@@ -1,13 +1,13 @@
 # OBS Live Delay Plugin
 
 <p align="center">
-  <img src="docs/production-warning.svg" width="100%" alt="Beta: v0.1.53-beta53 — read the entire README before use. Twitch tested only; other platforms untested. Working on the next update">
+  <img src="docs/production-warning.svg" width="100%" alt="Alpha: v0.2.0-alpha1 — read the entire README before use. Not yet tested on live platforms.">
 </p>
 
-## v0.1.53-beta53
+## v0.2.0-alpha1
 
 OBS Live Delay Plugin lets you add, change, remove, or reduce a stream delay from
-an OBS dock. It is still beta software: use a non-critical test stream before
+an OBS dock. It is alpha software: use a non-critical test stream before
 relying on it.
 
 ## Requirements
@@ -20,13 +20,13 @@ relying on it.
   H.264 are untested.
 - AAC streaming audio
 - One primary streaming service configured normally in OBS
-- This version has runtime acceptance on Twitch only; other platforms and RTMP
-  services are untested.
+- This alpha has been tested against local RTMP servers only. It has not yet
+  been tested on Twitch, YouTube, Kick, or any other live platform.
 
 ## Install
 
 1. Close OBS completely.
-2. Download `obs-active-live-delay-v0.1.53-beta53-windows-x64.zip` from the release.
+2. Download `obs-active-live-delay-v0.2.0-alpha1-windows-x64.zip` from the release.
 3. Extract the ZIP into the OBS installation directory, normally:
 
    ```text
@@ -37,7 +37,7 @@ relying on it.
 
 ## How to use it
 
-Do not press OBS's normal **Start Streaming** button. The dock owns the stream connection in this beta.
+Do not press OBS's normal **Start Streaming** button. The dock owns the stream connection in this alpha.
 
 ### Start a broadcast
 
@@ -119,9 +119,9 @@ Twitch, YouTube, and Kick combined runtime acceptance remains pending.
 - Direct start currently requires OBS **Simple Output** mode with x264 H.264 video and AAC audio.
 - The holding scene runs on its own x264 encoder for the whole session, so expect extra CPU use.
 - Do not try to switch an already-running normal OBS stream into the plugin; that workflow is blocked because Twitch ended the broadcast during handoff.
-- This is still a beta. Test with a non-critical stream before relying on it.
-- The current version has runtime acceptance on Twitch only. Do not infer
-  support for any other platform or RTMP service.
+- This is an alpha. Test with a non-critical stream before relying on it.
+- This version has not been tested on any live platform yet. Do not infer
+  support for Twitch or any other RTMP service.
 - Return Live, reconnect behaviour, long sessions, and clean shutdown need broader testing.
 - Native Multistream is experimental and has automated three-destination
   fake-server coverage only. Recorded Twitch, YouTube, and Kick runtime

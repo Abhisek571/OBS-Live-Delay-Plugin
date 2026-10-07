@@ -2,9 +2,12 @@
 
 Release labels use `v0.1.NN-betaNN` for beta `NN`; for example, Beta 5 uses
 `v0.1.5-beta5`, Beta 5.2 uses `v0.1.52-beta52`, and Beta 5.3 uses
-`v0.1.53-beta53`.
+`v0.1.53-beta53`. Alpha releases of a new line use `vX.Y.Z-alphaN`, starting
+with `v0.2.0-alpha1`.
 
-## Unreleased
+## v0.2.0-alpha1
+
+First alpha of the reworked pipeline. Tested against local RTMP servers only.
 
 - Broadcasts start live while a rolling buffer keeps the last N seconds.
   **Start Delay** rewinds into that buffer instantly (viewers see the last N
