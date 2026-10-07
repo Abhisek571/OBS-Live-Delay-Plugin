@@ -27,10 +27,11 @@ def validate_guard(ffmpeg, flv):
         blue = b > 150 and r < 80 and g < 80
         assert blue or (r > 150 and b < 80) or (g > 150 and b < 80), 'unexpected native picture'
         display.append((Fraction(frame['pts_time']), blue))
-    assert rgb[0] > 150 and rgb[2] < 80, 'native guard test must also start with retained red programme'
+    assert rgb[2] < 80, 'native guard test must start with programme, not holding'
     display.sort()
     runs = sum(blue and (i == 0 or not display[i-1][1]) for i, (_, blue) in enumerate(display))
-    assert runs == 4, f'all four real native holding transitions required, got {runs}'
+    # Rewind and Return Live switch programme directly; only the dump shows holding.
+    assert runs == 1, f'exactly one real native holding transition (the dump) required, got {runs}'
     intervals = [(t, display[i+1][0] if i+1 < len(display) else t+Fraction(1, 30))
                  for i, (t, blue) in enumerate(display) if blue]
     pcm = array.array('f')

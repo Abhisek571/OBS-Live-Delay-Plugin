@@ -47,7 +47,14 @@ void TransitionCoordinator::request(TransitionRequest request) {
  if (holding_headers_.avc_decoder_configuration.empty() || holding_headers_.aac_audio_specific_config.empty())
   throw std::runtime_error("HOLDING_NOT_READY: independent holding and silence are unavailable");
  std::string error;
- if (request.action==TransitionAction::SetDelay) {
+ // Rewind mode switches programme to programme: Start Delay replays the kept
+ // history and Return Live jumps forward, both at a keyframe with no holding.
+ // An action that no longer applies still rejoins programme in the new epoch.
+ const bool direct=request.action!=TransitionAction::EmergencyDump && controller_.rewind_mode();
+ if (direct) {
+  if (request.action==TransitionAction::SetDelay) (void)controller_.rewind();
+  else (void)controller_.resume_live();
+ } else if (request.action==TransitionAction::SetDelay) {
   if (!controller_.set_target(request.target,&error)) throw std::runtime_error(error);
  } else if (request.action==TransitionAction::ReturnLive) {
   controller_.return_live();
@@ -56,11 +63,11 @@ void TransitionCoordinator::request(TransitionRequest request) {
   controller_.return_live();
   if (!controller_.set_target(target,&error)) throw std::runtime_error(error);
  }
- (void)invalidate(request.epoch ? request.epoch : dispatcher_.reserve_epoch(epoch_)); desired_=Feed::Holding;
+ (void)invalidate(request.epoch ? request.epoch : dispatcher_.reserve_epoch(epoch_)); desired_=direct ? Feed::Programme : Feed::Holding;
  last_output_=published_output_;audio_end_=published_audio_end_;video_tail_=published_video_tail_;
  waiting_programme_.clear();waiting_bytes_=0;
  scheduled_.clear();scheduled_bytes_=0;scheduled_headers_.reset();drain_ack_.reset();paced_programme_=programme_boundary_sent_=programme_boundary_delivered_=false;
- drain_required_=last_output_>=0;guard_active_=paced_holding_=drain_required_;drain_ticket_=holding_ticket_=programme_ticket_=0;
+ drain_required_=!direct && last_output_>=0;guard_active_=paced_holding_=drain_required_;drain_ticket_=holding_ticket_=programme_ticket_=0;
  if(drain_required_ && programme_headers_.aac_audio_specific_config!=holding_headers_.aac_audio_specific_config)
   throw std::runtime_error("TRANSITION_CODEC_UNSUPPORTED: AAC configurations must match");
  (void)transition_aac_duration(holding_headers_);
@@ -111,6 +118,9 @@ void TransitionCoordinator::release_ready(std::vector<EncodedPacket> ready) {
  publish(Feed::Programme,std::move(ready));
 }
 void TransitionCoordinator::holding(std::vector<EncodedPacket> packets) {
+ // Holding audio is generated silence; keep one frame so a direct programme
+ // switch can bridge its audio gap even if holding has never been on air.
+ if(silent_aac_.empty())for(const auto &p:packets)if(p.kind==PacketKind::Audio && !p.audio_drain){silent_aac_=p.payload;break;}
  if(epoch_<dispatcher_.publication_epoch())return;
  // Drain continuously off-air; do not retain/replay old holding frames.
  if (desired_==Feed::Holding && (waiting_programme_.empty() || !selected_)) publish(Feed::Holding,std::move(packets));

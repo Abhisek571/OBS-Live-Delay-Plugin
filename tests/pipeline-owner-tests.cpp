@@ -184,36 +184,47 @@ void independent_programme_callbacks_are_bounded_and_ordered(){
  require(owner.status().phase==BroadcastPhase::Ready && factories==0,"independent callbacks must be watermarked, not fail on cross-stream arrival order");
  owner.stop();require(!owner.enqueue_uninterleaved({PacketKind::Audio,{1},500000,500000,false},token),"stopped capture rejects late callback");
 }
-void prebuffer_is_off_air_until_explicit_ready_start(){
+void prebuffer_is_off_air_until_start_then_live(){
  DelayController controller;ReleasedPacketDispatcher dispatcher;
  std::atomic_int factories=0,batches=0;std::atomic_bool connected=false;
  struct Sink : Consumer { std::atomic_int &count; explicit Sink(std::atomic_int &c):count(c){} void consume(const std::shared_ptr<const ReleasedPacketBatch> &b) override {
-  if(count++==0) require(!b->packets.empty() && b->packets.front().keyframe && b->packets.front().payload.back()==0x50,"first broadcast must be delayed programme keyframe, never holding");
+  // Output time is rebased; the video payload's last byte is the frame index.
+  if(count++==0) require(!b->packets.empty() && b->packets.front().keyframe && b->packets.front().payload.back()>=50,"first broadcast must be a live programme keyframe, never history or holding");
  }};
  PipelineOwner owner(controller,dispatcher,1,[]{return std::make_unique<HoldingCapture>(std::make_unique<ReadyBackend>());},
   [&](FlvCodecHeaders,SenderErrorCallback,std::string &){++factories;return std::make_shared<Sink>(batches);},{},2s,
   [&](const auto &){return connected.load();});
  owner.start();owner.headers(programme_test_headers());
- std::string error;require(!owner.start_broadcast(error),"early Start must reject rather than latch future publication");
- auto feed=[&](int i){owner.enqueue({PacketKind::Video,{0,0,0,2,0x65,0x50},i*100000LL,i*100000LL,i%10==0});owner.enqueue({PacketKind::Audio,{0x77},i*100000LL,i*100000LL,false});};
- for(int i=0;i<=30;++i)feed(i);
+ std::string error;
+ auto feed=[&](int i){owner.enqueue({PacketKind::Video,{0,0,0,2,0x65,std::uint8_t(i)},i*100000LL,i*100000LL,i%10==0});owner.enqueue({PacketKind::Audio,{0x77},i*100000LL,i*100000LL,false});};
+ for(int i=0;i<=5;++i)feed(i);
  auto deadline=std::chrono::steady_clock::now()+2s;
- while(owner.status().phase!=BroadcastPhase::Ready && std::chrono::steady_clock::now()<deadline)std::this_thread::sleep_for(1ms);
- require(owner.status().phase==BroadcastPhase::Ready && factories==0 && batches==0,"Ready must be off-air with no consumer creation");
- require(owner.start_broadcast(error) && !owner.start_broadcast(error),"Start accepted exactly once");
- for(int i=31;i<=60;++i)feed(i);
+ while(owner.status().phase!=BroadcastPhase::Filling && std::chrono::steady_clock::now()<deadline)std::this_thread::sleep_for(1ms);
+ require(owner.status().phase==BroadcastPhase::Filling && factories==0 && batches==0,"armed capture must be off-air with no consumer creation");
+ require(owner.start_broadcast(error) && !owner.start_broadcast(error),"Start accepted exactly once, without waiting for a full buffer");
+ for(int i=6;i<=50;++i)feed(i);
  std::this_thread::sleep_for(40ms);
- require(factories==1 && batches==0 && owner.status().phase==BroadcastPhase::Connecting,"connecting must not consume retained keyframe");
+ require(factories==1 && batches==0 && owner.status().phase==BroadcastPhase::Connecting,"connecting must not publish before the destination is ready");
  connected=true;std::this_thread::sleep_for(30ms);
- require(!owner.request({TransitionAction::ReturnLive,{}},error),"connecting startup must not allow Return Live to replace the initial delayed programme boundary");
- for(int i=61;i<=65;++i)feed(i);
- deadline=std::chrono::steady_clock::now()+1s;
- while(batches==0 && std::chrono::steady_clock::now()<deadline)std::this_thread::sleep_for(1ms);
- require(batches>0 && controller.status().target_delay==2s,"connected start preserves target and sends retained programme");
+ require(!owner.request({TransitionAction::ReturnLive,{}},error),"connecting startup must not allow transitions");
+ // Keep programme flowing: live output waits for the first keyframe after start.
+ for(int i=51;i<=120 && batches==0;++i){feed(i);std::this_thread::sleep_for(5ms);}
+ require(batches>0 && controller.status().state==DelayState::Live && controller.status().target_delay==2s,"connected start goes out live and keeps the buffer target");
  std::this_thread::sleep_for(2100ms);
  require(owner.status().phase==BroadcastPhase::Failed && owner.status().error.find("STALLED")!=std::string::npos,
   "broadcast capture stall must fail rather than remain falsely Broadcasting");
  owner.stop();require(dispatcher.consumer_count()==0 && owner.status().stopped,"stop must quiesce consumer");
+}
+void delay_state_is_shown_only_on_air(){
+ PipelineStatus s;
+ require(!broadcast_on_air(s),"stopped or disarmed must read off air");
+ s.stopped=false;
+ for(auto phase:{BroadcastPhase::Arming,BroadcastPhase::Filling,BroadcastPhase::Ready,BroadcastPhase::Stopping,BroadcastPhase::Failed}){
+  s.phase=phase;require(!broadcast_on_air(s),"armed or stopping capture is off air");
+ }
+ for(auto phase:{BroadcastPhase::Connecting,BroadcastPhase::Broadcasting}){
+  s.phase=phase;require(broadcast_on_air(s),"connecting or broadcasting is on air");
+ }
 }
 void new_coordinator_cannot_reuse_a_retired_publication_epoch(){
  struct Counter : Consumer {int calls=0;void consume(const std::shared_ptr<const ReleasedPacketBatch>&)override{++calls;}};
@@ -307,6 +318,10 @@ void initial_secondary_stall_cannot_disable_privacy(bool first_media){
  while(owner.status().phase!=BroadcastPhase::Ready && std::chrono::steady_clock::now()<deadline)std::this_thread::sleep_for(1ms);
  std::string error;require(owner.start_broadcast(error),"secondary stall fixture starts from Ready");
  for(int i=20;i<170;++i){feed(i);std::this_thread::sleep_for(10ms);}
+ // The broadcast starts live; Emergency Dump applies once Start Delay has rewound.
+ require(owner.request({TransitionAction::SetDelay,Microseconds{100000}},error),"rewind before dump");
+ for(int i=170;i<220;++i){feed(i);std::this_thread::sleep_for(10ms);}
+ require(controller.status().state==DelayState::Delayed,"rewind fixture must be delayed before the dump");
  const auto status=owner.status();const auto network=multi->status();
  const auto token=owner.capture_token();const bool accepted=owner.request({TransitionAction::EmergencyDump,{}},error);
  const bool stale=owner.enqueue({PacketKind::Audio,{0xee},5000000,5000000,false},token);
@@ -405,5 +420,5 @@ void unsupported_codec_cannot_advertise_off_air_ready(){
  require(status.phase==BroadcastPhase::Failed && status.error.starts_with("TRANSITION_CODEC_UNSUPPORTED") && !status.holding_ready && factories==0,"unsupported timing cannot advertise protected off-air Ready or connect a destination");
 }
 }
-int main(){try{changed_headers_pending_start_and_stop_race();changed_headers_revoke_offair_ready();unsupported_packet_timing_fails_before_network();initial_secondary_stall_cannot_disable_privacy(false);initial_secondary_stall_cannot_disable_privacy(true);unsupported_codec_cannot_advertise_off_air_ready();new_coordinator_cannot_reuse_a_retired_publication_epoch();accepted_action_cuts_off_already_dequeued_programme();prebuffer_stall_failure_and_pending_stop_are_off_air();stale_packets_behind_prepare_cannot_advertise_ready();malformed_headers_never_make_ready();independent_programme_callbacks_are_bounded_and_ordered();prebuffer_is_off_air_until_explicit_ready_start();failure_before_install_cannot_publish_ready();startup_failure_is_visible_before_factory_returns();overlapping_actions_are_serialized_not_lost();delay_change_keeps_in_flight_programme_capture();std::cout<<"Owner tests passed\n";}
+int main(){try{changed_headers_pending_start_and_stop_race();changed_headers_revoke_offair_ready();unsupported_packet_timing_fails_before_network();initial_secondary_stall_cannot_disable_privacy(false);initial_secondary_stall_cannot_disable_privacy(true);unsupported_codec_cannot_advertise_off_air_ready();delay_state_is_shown_only_on_air();new_coordinator_cannot_reuse_a_retired_publication_epoch();accepted_action_cuts_off_already_dequeued_programme();prebuffer_stall_failure_and_pending_stop_are_off_air();stale_packets_behind_prepare_cannot_advertise_ready();malformed_headers_never_make_ready();independent_programme_callbacks_are_bounded_and_ordered();prebuffer_is_off_air_until_start_then_live();failure_before_install_cannot_publish_ready();startup_failure_is_visible_before_factory_returns();overlapping_actions_are_serialized_not_lost();delay_change_keeps_in_flight_programme_capture();std::cout<<"Owner tests passed\n";}
  catch(const std::exception &e){std::cerr<<e.what()<<'\n';return 1;}}

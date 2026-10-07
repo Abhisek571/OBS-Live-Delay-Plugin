@@ -6,11 +6,12 @@ Release labels use `v0.1.NN-betaNN` for beta `NN`; for example, Beta 5 uses
 
 ## Unreleased
 
-- Replaces the live-then-delay flow with **Arm Buffer → READY → Start Delayed
-  Broadcast**: the delay fills off air, and the platform receives programme
-  already delayed.
-- Renders the holding scene privately with its own encoder and switches to it
-  inside the outgoing stream, without touching the OBS programme or recording.
+- Broadcasts start live while a rolling buffer keeps the last N seconds.
+  **Start Delay** rewinds into that buffer instantly (viewers see the last N
+  seconds again, no holding scene); **Return Live** jumps forward and keeps the
+  buffer so the delay can be restarted at once.
+- Renders the holding scene privately with its own encoder; it is shown only while
+  an Emergency Dump rebuilds the delay, never touching the OBS programme or recording.
 - Adds **Emergency Dump (Rebuild Delay)**.
 - Fixes: Start Delay while delayed no longer leaves a hole in the buffer;
   switching to holding no longer leaves an audio gap; pacing stops once a resume

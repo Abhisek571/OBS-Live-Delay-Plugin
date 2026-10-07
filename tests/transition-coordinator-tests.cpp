@@ -277,6 +277,34 @@ void switch_to_holding_has_no_audio_gap(){
  for(std::size_t i=1;i<audio.size();++i)
   require(audio[i].pts_us-(audio[i-1].pts_us+duration)<duration+1000,"switching to holding must not leave an unfilled audio gap");
 }
+void rewind_mode_switches_programme_directly(){
+ DelayController controller;ReleasedPacketDispatcher dispatcher;auto sink=std::make_shared<Recorder>();dispatcher.add_consumer(sink);
+ std::string error;require(controller.arm(Microseconds{200000},error) && controller.start_live(),"rewind fixture arms and starts live");
+ TransitionCoordinator c(controller,dispatcher,1,programme_test_headers());c.holding_ready(holding_test_headers());
+ c.holding({packet(PacketKind::Video,0,true,0x48),packet(PacketKind::Audio,1000,false,0)});
+ require(sink->batches.empty(),"holding stays off air while live");
+ // Video id is the frame index, so a replay is visible as older ids.
+ auto feed=[&](int from,int to){for(int i=from;i<=to;++i){c.programme(packet(PacketKind::Video,i*50000LL,i%2==0,uint8_t(i)));c.programme(packet(PacketKind::Audio,i*50000LL+1000,false,0x77));c.check_deadline();}};
+ auto videos=[&](std::size_t from){std::vector<EncodedPacket> v;for(auto i=from;i<sink->batches.size();++i)for(const auto &p:sink->batches[i].packets)if(p.kind==PacketKind::Video)v.push_back(p);return v;};
+ feed(0,10);
+ require(!sink->batches.empty() && videos(0).back().payload.back()==10,"broadcast starts live");
+ c.request({TransitionAction::SetDelay,Microseconds{200000}});
+ const auto rewound=sink->batches.size();
+ feed(11,14);
+ auto replay=videos(rewound);
+ require(!replay.empty() && replay.front().keyframe && replay.front().payload.back()<=6,"Start Delay replays kept history at once");
+ require(replay.back().payload.back()<=10,"rewound programme stays behind live");
+ c.request({TransitionAction::ReturnLive,{}});
+ const auto returned=sink->batches.size();
+ feed(15,18);
+ auto current=videos(returned);
+ require(!current.empty() && current.front().keyframe && current.front().payload.back()==16,"Return Live jumps to current programme");
+ std::int64_t last=-1;
+ for(const auto &b:sink->batches)for(const auto &p:b.packets){
+  require(p.payload!=std::vector<uint8_t>{0,0,0,2,0x65,0x48},"direct switches never show holding video");
+  require(p.dts_us>=last,"output timestamps keep moving forward across rewinds");last=p.dts_us;
+ }
 }
-int main() { try { stale_epoch_programme_is_still_buffered(); resumed_programme_stops_pacing_after_boundary_delivery(); switch_to_holding_has_no_audio_gap(); superseding_guard_does_not_rebase_from_unpublished_future(); timed_work_is_revoked_and_bounded(); programme_boundary_delivery_timeout_is_not_enqueue_success(); resumed_programme_audio_waits_for_visible_picture(); codec_eligibility_is_fail_closed(); paced_holding_survives_long_rebuild_and_waits_for_delivery(); fast_programme_cannot_cancel_queued_guard(); independent_holding_keeps_programme_capture(); return_live_and_dump_keep_safe_boundaries(); missing_fresh_keyframe_times_out_fail_closed(); initial_mid_gop_wait_has_bounded_fail_closed_deadline(); drain_precedes_paced_holding_instead_of_timestamp_only_burst();std::cout<<"Transition tests passed\n"; }
+}
+int main() { try { stale_epoch_programme_is_still_buffered(); resumed_programme_stops_pacing_after_boundary_delivery(); switch_to_holding_has_no_audio_gap();rewind_mode_switches_programme_directly(); superseding_guard_does_not_rebase_from_unpublished_future(); timed_work_is_revoked_and_bounded(); programme_boundary_delivery_timeout_is_not_enqueue_success(); resumed_programme_audio_waits_for_visible_picture(); codec_eligibility_is_fail_closed(); paced_holding_survives_long_rebuild_and_waits_for_delivery(); fast_programme_cannot_cancel_queued_guard(); independent_holding_keeps_programme_capture(); return_live_and_dump_keep_safe_boundaries(); missing_fresh_keyframe_times_out_fail_closed(); initial_mid_gop_wait_has_bounded_fail_closed_deadline(); drain_precedes_paced_holding_instead_of_timestamp_only_burst();std::cout<<"Transition tests passed\n"; }
  catch(const std::exception &e) { std::cerr<<e.what()<<'\n';return 1; } }

@@ -39,30 +39,33 @@ relying on it.
 
 Do not press OBS's normal **Start Streaming** button. The dock owns the stream connection in this beta.
 
-### Start a delayed broadcast
+### Start a broadcast
 
-The delay is built off air first, so viewers never see the buffer filling.
+The broadcast goes out live. The plugin keeps the last N seconds of programme
+in a rolling buffer the whole time, so a delay can start instantly.
 
-1. In the Active Live Delay dock, choose the **Scene shown while delay starts**
-   (the holding scene) and the **Delay length (seconds)**.
-2. Press **Arm Buffer**. The plugin captures your programme off air; the status
-   shows `FILLING — OFF AIR`.
-3. Wait for `READY — OFF AIR`. A 15-second delay needs about 15 seconds.
-4. Press **Start Delayed Broadcast**. The platform receives your programme
-   already delayed. The status shows `BROADCASTING`.
+1. In the Active Live Delay dock, choose the **Delay length (seconds)** and the
+   **Scene shown while an Emergency Dump rebuilds the delay** (the holding scene).
+2. Press **Arm Buffer**. The plugin starts capturing your programme; the status
+   shows `FILLING — OFF AIR`, then `READY — OFF AIR` once the buffer is full.
+3. Press **Start Broadcast (Live)** at any point after arming. The platform
+   receives your programme live. The status shows `BROADCASTING`, and the buffer
+   keeps filling in the background.
 
 The holding scene is rendered privately with its own encoder. It never changes
 your OBS programme scene or recording.
 
 ### While broadcasting
 
-- **Return Live (Keep Broadcasting)** drops the delay and resumes your current
-  programme at the next keyframe. Connections stay up.
-- **Start Delay** rebuilds the armed delay behind the holding scene, for example
-  after Return Live.
-- **Emergency Dump (Rebuild Delay)** discards everything still buffered and
-  rebuilds the same delay behind the holding scene. Content already sent to the
-  platform cannot be recalled.
+- **Start Delay** rewinds the stream into the buffer at once and stays that many
+  seconds behind. Viewers see the last N seconds again; no holding scene is
+  shown. It is available once the buffer is full (N seconds after arming).
+- **Return Live (Keep Broadcasting)** jumps forward to your current programme at
+  the next keyframe. Viewers skip what was still delayed. The buffer is kept, so
+  **Start Delay** is available again straight away. Connections stay up.
+- **Emergency Dump (Rebuild Delay)** is available while delayed. It discards
+  everything still buffered and rebuilds the same delay behind the holding
+  scene. Content already sent to the platform cannot be recalled.
 
 The delay length is locked once armed. To change it, use **Stop / Disarm**,
 choose the new length, and arm again.
@@ -103,12 +106,12 @@ Twitch, YouTube, and Kick combined runtime acceptance remains pending.
 
 | Button | Effect |
 |:---|:---|
-| **Arm Buffer** | Captures your programme off air and fills the delay. Nothing connects to a platform yet. |
-| **Start Delayed Broadcast** | Available at `READY`. Connects the primary and every enabled secondary and starts already delayed. Press this instead of OBS **Start Streaming**. |
+| **Arm Buffer** | Starts capturing your programme into the rolling buffer. Nothing connects to a platform yet. |
+| **Start Broadcast (Live)** | Available once armed. Connects the primary and every enabled secondary and broadcasts live while the buffer keeps filling. Press this instead of OBS **Start Streaming**. |
 | **Stop / Disarm** | Discards the buffer and ends the primary and every enabled secondary. Requires confirmation while broadcasting. |
-| **Start Delay** | Rebuilds the armed delay behind the holding scene. |
-| **Return Live (Keep Broadcasting)** | Removes the delay but keeps all platform connections online. |
-| **Emergency Dump (Rebuild Delay)** | Requires confirmation. Discards buffered programme and rebuilds the same delay behind the holding scene. |
+| **Start Delay** | Rewinds the stream into the full buffer at once and stays that many seconds behind. Viewers see the last seconds again. |
+| **Return Live (Keep Broadcasting)** | Jumps forward to live and keeps the buffer, so Start Delay works again straight away. Connections stay online. |
+| **Emergency Dump (Rebuild Delay)** | Available while delayed; requires confirmation. Discards buffered programme and rebuilds the same delay behind the holding scene. |
 
 ## Before you use it
 

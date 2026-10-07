@@ -48,6 +48,7 @@ bool DelayController::arm(Microseconds target, std::string &error)
 	reset_timestamp_tracking_locked();
 	video_watermark_.reset(); audio_watermark_.reset(); playback_delay_.reset();
 	target_delay_ = target; armed_ = true; state_ = DelayState::BuildingDelay; error_.clear();
+	passthrough_ = rewind_mode_ = false;
 	return true;
 }
 
@@ -80,6 +81,47 @@ bool DelayController::begin_broadcast()
 	return true;
 }
 
+bool DelayController::start_live()
+{
+	std::scoped_lock lock(mutex_);
+	if (!armed_ || passthrough_ || state_ == DelayState::Error) return false;
+	ready_.clear();
+	passthrough_ = rewind_mode_ = true; waiting_for_live_keyframe_ = true;
+	state_ = DelayState::Live;
+	return true;
+}
+
+bool DelayController::rewind()
+{
+	std::scoped_lock lock(mutex_);
+	if (!passthrough_ || !prebuffer_ready_locked()) return false;
+	// Live media not yet taken is newer than the history about to replay.
+	ready_.clear();
+	passthrough_ = false;
+	playback_delay_ = Microseconds{buffered_.back().dts_us - buffered_.front().dts_us};
+	armed_ = false; state_ = DelayState::Delayed;
+	return true;
+}
+
+bool DelayController::resume_live()
+{
+	std::scoped_lock lock(mutex_);
+	if (!rewind_mode_ || passthrough_ || target_delay_ <= kNoDelay || state_ == DelayState::Error) return false;
+	// The unreleased delayed media is the most recent programme history, so it
+	// stays as the next rewind's buffer instead of being discarded.
+	ready_.clear(); playback_delay_.reset(); pending_trim_ = false;
+	armed_ = passthrough_ = true; waiting_for_live_keyframe_ = true;
+	state_ = DelayState::Live;
+	roll_prebuffer_locked();
+	return true;
+}
+
+bool DelayController::rewind_mode() const
+{
+	std::scoped_lock lock(mutex_);
+	return rewind_mode_;
+}
+
 void DelayController::roll_prebuffer_locked()
 {
 	if (!video_watermark_ || !audio_watermark_ || buffered_.empty()) return;
@@ -91,7 +133,7 @@ void DelayController::roll_prebuffer_locked()
 		if (p.kind == PacketKind::Video && p.keyframe) keep = i;
 	}
 	while (keep--) { buffered_bytes_ -= buffered_.front().payload.size(); buffered_.pop_front(); }
-	state_ = prebuffer_ready_locked() ? DelayState::Delayed : DelayState::BuildingDelay;
+	if (!passthrough_) state_ = prebuffer_ready_locked() ? DelayState::Delayed : DelayState::BuildingDelay;
 }
 
 bool DelayController::set_target(Microseconds target, std::string *error)
@@ -144,7 +186,7 @@ bool DelayController::set_target(Microseconds target, std::string *error)
 void DelayController::return_live()
 {
 	std::scoped_lock lock(mutex_);
-	armed_ = false; playback_delay_.reset(); video_watermark_.reset(); audio_watermark_.reset();
+	armed_ = passthrough_ = false; playback_delay_.reset(); video_watermark_.reset(); audio_watermark_.reset();
 	state_ = DelayState::ReturningLive;
 	buffered_.clear();
 	ready_.clear();
@@ -159,7 +201,7 @@ void DelayController::return_live()
 void DelayController::reset_for_discontinuity(std::string_view reason)
 {
 	std::scoped_lock lock(mutex_);
-	armed_ = false; playback_delay_.reset(); video_watermark_.reset(); audio_watermark_.reset();
+	armed_ = passthrough_ = rewind_mode_ = false; playback_delay_.reset(); video_watermark_.reset(); audio_watermark_.reset();
 	buffered_.clear();
 	ready_.clear();
 	buffered_bytes_ = 0;
@@ -185,20 +227,27 @@ void DelayController::ingest(EncodedPacket packet)
 	if (!normalize_timestamp_locked(packet))
 		return;
 	if (state_ == DelayState::Live) {
+		bool emit = true;
 		if (waiting_for_live_keyframe_) {
 			if (packet.kind != PacketKind::Video || !packet.keyframe)
-				return;
-			waiting_for_live_keyframe_ = false;
-			live_keyframe_dts_us_ = packet.dts_us;
+				emit = false;
+			else {
+				waiting_for_live_keyframe_ = false;
+				live_keyframe_dts_us_ = packet.dts_us;
+			}
 		}
 		if (packet.kind == PacketKind::Audio && packet.dts_us < live_keyframe_dts_us_)
+			emit = false;
+		if (!passthrough_) {
+			if (emit) ready_.push_back(std::move(packet));
 			return;
-		ready_.push_back(std::move(packet));
-		return;
+		}
+		// Rewind mode also keeps every packet as history, emitted or not.
+		if (emit) ready_.push_back(packet);
 	}
 	// A delay can be requested between keyframes. Retain no dependent prefix:
 	// independent holding remains on air until a safe programme GOP exists.
-	if (state_ == DelayState::BuildingDelay && buffered_.empty() &&
+	if ((state_ == DelayState::BuildingDelay || passthrough_) && buffered_.empty() &&
 		(packet.kind != PacketKind::Video || !packet.keyframe))
 		return;
 	if (!buffered_.empty() && packet.dts_us < buffered_.back().dts_us) {

@@ -382,9 +382,45 @@ void discontinuity_discards_unreleased_media_and_starts_a_clean_epoch()
 }
 } // namespace
 
+void live_start_keeps_history_for_instant_rewind()
+{
+	DelayController controller; std::string error;
+	require(!controller.start_live(), "live start requires an armed buffer");
+	require(controller.arm(2s, error) && controller.start_live() && controller.rewind_mode(), "armed buffer starts live");
+	require(!controller.rewind(), "rewind needs a full buffer");
+	std::vector<EncodedPacket> live;
+	auto feed = [&](int from, int to) {
+		for (int i = from; i <= to; ++i) {
+			controller.ingest(video(i * 100000LL, i % 10 == 5)); controller.ingest(audio(i * 100000LL));
+			auto ready = controller.take_ready_packets(); live.insert(live.end(), ready.begin(), ready.end());
+		}
+	};
+	feed(0, 40);
+	require(controller.status().state == DelayState::Live, "rolling history must not report delayed while live");
+	require(!live.empty() && live.front().keyframe && live.front().dts_us == 500000 && live.back().dts_us == 4000000,
+		"live output starts at a keyframe and passes current programme through");
+	require(controller.prebuffer_ready() && controller.status().current_delay >= 2s && controller.status().current_delay < 3s,
+		"history keeps the last target seconds while live");
+
+	require(controller.rewind() && controller.status().state == DelayState::Delayed, "full history rewinds");
+	require(!controller.rewind(), "rewind only applies while live");
+	live.clear(); feed(41, 41);
+	require(!live.empty() && live.front().keyframe && live.front().dts_us == 1500000,
+		"rewind replays from the oldest kept keyframe");
+	feed(42, 60);
+	require(live.back().dts_us <= 6000000 - 2000000, "rewound programme stays at least the target behind");
+
+	require(controller.resume_live() && controller.status().state == DelayState::Live, "return live from rewind");
+	require(controller.prebuffer_ready(), "returning live keeps the history for the next rewind");
+	live.clear(); feed(61, 70);
+	require(!live.empty() && live.front().keyframe && live.front().dts_us == 6500000, "return live joins current programme at a keyframe");
+	require(controller.rewind(), "rewind is available again straight away");
+}
+
 int main()
 {
 	try {
+		live_start_keeps_history_for_instant_rewind();
 		live_transitions_wait_for_video_keyframe_and_aligned_audio();
 		changing_delay_discards_pending_releases();
 		trimming_equal_timestamps_makes_progress();

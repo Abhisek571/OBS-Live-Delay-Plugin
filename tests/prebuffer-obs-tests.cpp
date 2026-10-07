@@ -178,14 +178,18 @@ int main(int argc,char **argv){
     if(!session->pipeline_status().error.empty())std::cerr<<session->pipeline_status().error<<'\n';
     check(session->pipeline_status().phase==BroadcastPhase::Broadcasting,"local broadcast failed");
     if(guard_test){
-     for(const auto request:{TransitionRequest{TransitionAction::SetDelay,2s},TransitionRequest{TransitionAction::SetDelay,1s},TransitionRequest{TransitionAction::EmergencyDump,{}},TransitionRequest{TransitionAction::ReturnLive,{}}}){
+     // Rewind, dump (the only action that shows holding), return live, rewind again.
+     for(const auto request:{TransitionRequest{TransitionAction::SetDelay,1s},TransitionRequest{TransitionAction::EmergencyDump,{}},TransitionRequest{TransitionAction::ReturnLive,{}},TransitionRequest{TransitionAction::SetDelay,1s}}){
       check(session->request_transition(request,error),"native transition rejected");
       const auto until=std::chrono::steady_clock::now()+4500ms;
       do {std::this_thread::sleep_for(10ms);}while(session->pipeline_status().transition_pending && session->pipeline_status().error.empty() && std::chrono::steady_clock::now()<until);
       if(!session->pipeline_status().error.empty())std::cerr<<session->pipeline_status().error<<'\n';
       check(!session->pipeline_status().transition_pending && session->pipeline_status().error.empty(),"native paced transition did not complete");
-      const auto expected=request.action==TransitionAction::EmergencyDump ? 1s : request.action==TransitionAction::ReturnLive ? 0s : request.target;
-      check(session->controller.delay.status().target_delay==expected,"native transition lost selected target");
+      check(session->controller.delay.status().target_delay==1s,"native transition lost the armed target");
+      // A dump rebuilds behind holding; Start Delay needs the history full again.
+      const auto refill=std::chrono::steady_clock::now()+3s;
+      do {std::this_thread::sleep_for(50ms);}while(!(session->controller.delay.status().state==DelayState::Delayed ||
+       session->controller.delay.prebuffer_ready()) && std::chrono::steady_clock::now()<refill);
       std::this_thread::sleep_for(350ms);
      }
     }
