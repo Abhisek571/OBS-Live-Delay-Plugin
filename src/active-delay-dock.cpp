@@ -398,10 +398,14 @@ void ActiveDelayDock::refresh_status()
 		return;
 
 	const auto value = session_->controller.delay.status();
-	show_state(status_, state_text(value.state), state_colour(value.state));
 	const auto pipeline = session_->pipeline_status();
 	session_->refresh_network_status();
-	if (!pipeline.stopped && (pipeline.transition_pending || !pipeline.ready))
+	const bool on_air = broadcast_on_air(pipeline);
+	if (on_air)
+		show_state(status_, state_text(value.state), state_colour(value.state));
+	else
+		show_state(status_, "● " + locale_text("Delay.Status.OffAir"), "#8a8f98");
+	if (on_air && (pipeline.transition_pending || !pipeline.ready))
 		show_state(status_, locale_text("Delay.Status.Pending"), "#d29922");
 	if (!pipeline.error.empty())
 		show_state(status_, QString::fromStdString(pipeline.error), "#e5534b");
@@ -413,7 +417,9 @@ void ActiveDelayDock::refresh_status()
 		show_state(status_, persistent_output_error_, "#e5534b");
 	}
 	const bool output_running = delayed_output_ && obs_output_active(delayed_output_);
-	enable_button_->setEnabled(output_running && pipeline.phase == BroadcastPhase::Broadcasting && pipeline.ready && pipeline.holding_ready);
+	// Start Delay rewinds into the kept history, so it needs a full buffer.
+	enable_button_->setEnabled(output_running && pipeline.phase == BroadcastPhase::Broadcasting && pipeline.ready &&
+		pipeline.holding_ready && value.state == DelayState::Live && session_->controller.delay.prebuffer_ready());
 	target_seconds_->setEnabled(!output_running && output_flow_state_ == OutputFlowState::Stopped);
 	target_seconds_->setToolTip(locale_text("Broadcast.DelayLocked"));
 	holding_scene_->setEnabled(!output_running);
@@ -454,10 +460,11 @@ void ActiveDelayDock::refresh_status()
 	}
 	const auto output_active = delayed_output_ && obs_output_active(delayed_output_);
 	arm_buffer_button_->setEnabled(!delayed_output_ && output_flow_state_ == OutputFlowState::Stopped);
-	start_output_button_->setEnabled(output_active && pipeline.phase == BroadcastPhase::Ready);
+	start_output_button_->setEnabled(output_active && (pipeline.phase == BroadcastPhase::Ready || pipeline.phase == BroadcastPhase::Filling));
 	stop_output_button_->setEnabled(output_active && output_flow_state_ != OutputFlowState::Stopping);
-	return_live_button_->setEnabled(output_active && pipeline.phase == BroadcastPhase::Broadcasting && pipeline.ready && pipeline.holding_ready);
-	emergency_dump_button_->setEnabled(output_active && pipeline.phase == BroadcastPhase::Broadcasting && pipeline.ready && pipeline.holding_ready);
+	const bool delayed = value.state != DelayState::Live;
+	return_live_button_->setEnabled(output_active && pipeline.phase == BroadcastPhase::Broadcasting && pipeline.ready && pipeline.holding_ready && delayed);
+	emergency_dump_button_->setEnabled(output_active && pipeline.phase == BroadcastPhase::Broadcasting && pipeline.ready && pipeline.holding_ready && delayed);
 
 	}
 

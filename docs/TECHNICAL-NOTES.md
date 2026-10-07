@@ -20,17 +20,23 @@ Media path:
 
 ## Startup and playback behaviour
 
-- **Arm** starts a `PipelineOwner` that captures compressed programme off air
-  into the `DelayController`. No destination is read or connected until the
-  buffer is `READY` and the user presses **Start Delayed Broadcast**.
+- **Arm** starts a `PipelineOwner` that captures compressed programme into an
+  armed `DelayController`. No destination is read or connected until the user
+  presses **Start Broadcast**, which may happen before the buffer is full.
+- The broadcast starts live (`DelayController::start_live`): programme passes
+  through while the controller keeps rolling history of the target length.
+  **Start Delay** calls `rewind()`, replaying that history from its oldest
+  keyframe; **Return Live** calls `resume_live()`, keeping the unreleased media
+  as the next rewind's history. Both are direct programme-to-programme
+  splices in a new epoch, with a silent AAC bridge and no holding.
 - The holding scene is rendered by an isolated `obs_view` with its own x264
   encoder and generated silent AAC (`holding-obs-capture.cpp`). It runs for the
   whole session and never changes the OBS programme or recording.
-- `TransitionCoordinator` splices holding and programme inside the outgoing
-  stream. Each action reserves a new epoch, fences queued network media, sends
-  a silent AAC drain, paces holding, and resumes programme on a fresh keyframe
-  with a silent audio bridge. Pacing stops once the resume boundary is
-  delivered.
+- **Emergency Dump** still uses the holding path: `TransitionCoordinator`
+  splices holding and programme inside the outgoing stream. Each action
+  reserves a new epoch, fences queued network media, sends a silent AAC drain,
+  paces holding, and resumes programme on a fresh keyframe with a silent audio
+  bridge. Pacing stops once the resume boundary is delivered.
 - `transition-codec.hpp` admits only codecs whose switch timing it can prove:
   progressive AVC with VUI timing and bounded reordering, and 1024-sample LC
   AAC at 44.1/48 kHz. NVENC headers currently fail this check.

@@ -39,9 +39,10 @@ bool PipelineOwner::start_broadcast(std::string &error){
  std::scoped_lock lock(mutex_);
  std::scoped_lock failure_lock(failure_->mutex);
  const auto now=std::chrono::steady_clock::now();
- if(stopping_ || !failure_->error.empty() || status_.phase!=BroadcastPhase::Ready || broadcast_requested_ ||
+ // The broadcast starts live, so it needs fresh programme, not a full buffer.
+ if(stopping_ || !failure_->error.empty() || (status_.phase!=BroadcastPhase::Ready && status_.phase!=BroadcastPhase::Filling) || broadcast_requested_ ||
     now-last_video_>std::chrono::seconds(2) || now-last_audio_>std::chrono::seconds(2) || now-last_key_>std::chrono::seconds(5)) {
-  error="PREBUFFER_NOT_READY: arm and wait for fresh buffered video and audio";return false;
+  error="PREBUFFER_NOT_READY: arm and wait for fresh programme video and audio";return false;
  }
  broadcast_requested_=true;status_.phase=BroadcastPhase::Connecting;wake_.notify_one();return true;
 }
@@ -116,6 +117,14 @@ bool PipelineOwner::request(TransitionRequest request,std::string &error){
  if(stopping_ || !status_.ready || !status_.holding_ready ||
     (prebuffer_target_!=Microseconds{} && status_.phase!=BroadcastPhase::Broadcasting)){error="HOLDING_NOT_READY: transition unavailable until delayed programme is broadcasting";return false;}
  if(requests_.size()>=64){error="TRANSITION_QUEUE_FULL: too many pending actions";return false;}
+ const bool rewind_mode=controller_.rewind_mode();
+ if(rewind_mode){
+  const auto state=controller_.status().state;
+  if(request.action==TransitionAction::SetDelay && (state!=DelayState::Live || !controller_.prebuffer_ready())){
+   error=state==DelayState::Live ? "DELAY_NOT_READY: the buffer is still filling" : "DELAY_ALREADY_ACTIVE: return live first";return false;}
+  if(request.action==TransitionAction::ReturnLive && state==DelayState::Live){error="ALREADY_LIVE: no delay to leave";return false;}
+  if(request.action==TransitionAction::EmergencyDump && state==DelayState::Live){error="DUMP_UNAVAILABLE: nothing delayed to dump while live";return false;}
+ }
  // Preserve accepted action order. Dump retains preceding configured target.
  // Fence the dispatcher's already-dequeued owner batch AND network queues now,
  // rather than waiting for the worker's next request-processing iteration.
@@ -127,8 +136,10 @@ bool PipelineOwner::request(TransitionRequest request,std::string &error){
  requests_.push_back(request);
  status_.transition_pending=true;
  // A delay change keeps the controller buffer, so in-flight capture must reach
- // it in order. Only actions that discard the buffer revoke captured media.
- if(request.action!=TransitionAction::SetDelay){++capture_epoch_;clear_capture_locked();}
+ // it in order; so does Return Live in rewind mode, which keeps the history.
+ // Only actions that discard the buffer revoke captured media.
+ const bool keeps_buffer=request.action==TransitionAction::SetDelay || (rewind_mode && request.action==TransitionAction::ReturnLive);
+ if(!keeps_buffer){++capture_epoch_;clear_capture_locked();}
  wake_.notify_one();return true;
 }
 void PipelineOwner::request_stop() noexcept {
@@ -207,7 +218,7 @@ void PipelineOwner::run() noexcept {
     }
     if(!headers && now>header_deadline)throw std::runtime_error("PROGRAMME_HEADERS_TIMEOUT");
     if(!requested)continue;
-    if(!headers || !controller_.prebuffer_ready())throw std::runtime_error("PREBUFFER_READINESS_LOST: disarm and refill before broadcasting");
+    if(!headers)throw std::runtime_error("PROGRAMME_HEADERS_TIMEOUT");
    }
    if(!consumer && headers){
     {std::scoped_lock lock(mutex_);if(stopping_)break;}
@@ -226,7 +237,7 @@ void PipelineOwner::run() noexcept {
     {std::scoped_lock lock(mutex_);if(stopping_)break;}
     if(prebuffer_target_!=Microseconds{}){
      if(consumer_ready_ && !consumer_ready_(consumer))continue;
-     if(!controller_.begin_broadcast())throw std::runtime_error("PREBUFFER_READINESS_LOST: no safe delayed start");
+     if(!controller_.start_live())throw std::runtime_error("PREBUFFER_READINESS_LOST: capture cannot start live");
     }
     std::scoped_lock lock(mutex_);
     std::scoped_lock failure_lock(failure_->mutex);

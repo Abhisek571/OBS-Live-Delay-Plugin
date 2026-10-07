@@ -47,6 +47,12 @@ public:
 	bool arm(Microseconds target, std::string &error);
 	[[nodiscard]] bool prebuffer_ready() const;
 	bool begin_broadcast();
+	// Rewind mode: an armed controller passes programme through live while it
+	// keeps rolling history, so Start Delay can replay that history at once.
+	bool start_live();
+	bool rewind();
+	bool resume_live();
+	[[nodiscard]] bool rewind_mode() const;
 
 	bool set_target(Microseconds target);
 	bool set_target(Microseconds target, std::string *error);
@@ -71,6 +77,7 @@ private:
 
 	BufferLimits limits_;
 	bool armed_ = false;
+	bool passthrough_ = false, rewind_mode_ = false;
 	std::optional<Microseconds> playback_delay_;
 	std::optional<std::int64_t> video_watermark_, audio_watermark_;
 	mutable std::mutex mutex_;

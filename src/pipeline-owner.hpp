@@ -8,6 +8,11 @@
 namespace active_delay {
 enum class BroadcastPhase { Stopped, Arming, Filling, Ready, Connecting, Broadcasting, Stopping, Failed };
 struct PipelineStatus { bool ready=false; bool holding_ready=false; bool stopped=true; std::string error; bool transition_pending=false; BroadcastPhase phase=BroadcastPhase::Stopped; };
+// The delay controller reports Live when idle and Delayed while an armed buffer
+// fills, so its state only describes what viewers see while this is true.
+inline bool broadcast_on_air(const PipelineStatus &s) {
+ return !s.stopped && (s.phase==BroadcastPhase::Connecting || s.phase==BroadcastPhase::Broadcasting);
+}
 class PipelineOwner {
 public:
  using HoldingFactory=std::function<std::unique_ptr<HoldingCapture>()>;

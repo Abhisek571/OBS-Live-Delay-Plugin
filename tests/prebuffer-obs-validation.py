@@ -48,16 +48,16 @@ def validate(flv):
         return 'unexpected'
     labels = list(map(label, frames))
     assert len(frames) >= 60, 'local receiver did not decode sufficient programme video'
-    assert labels[0] == 'programme-red', f'first media was not retained programme: {frames[0]}'
     assert 'unexpected' not in labels, 'holding/black/corrupt frame was exposed'
+    # The harness turns programme green just before Start, and the broadcast is live.
     green = labels.index('programme-green')
-    assert green >= 20, f'programme switched too soon to be delayed: {green} frames'
+    assert green <= 5, f'broadcast did not start live: {green} pre-start frames'
     assert all(x == 'programme-green' for x in labels[green:]), 'programme time moved backwards'
     audio = subprocess.run([ffmpeg, '-v', 'error', '-i', str(flv), '-map', '0:a:0', '-f', 'f32le', '-'],
                            capture_output=True, timeout=5)
     assert audio.returncode == 0 and len(audio.stdout) >= 48000 * 2 * 4, 'AAC programme stream must decode'
     return {'decoded_frames': len(frames), 'first_rgb': frames[0], 'first_green_frame': green,
-            'decoded_audio_bytes': len(audio.stdout), 'no_holding_or_live_start': True}
+            'decoded_audio_bytes': len(audio.stdout), 'no_holding_and_live_start': True}
 
 try:
     for index, port in enumerate(ports):
