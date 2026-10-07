@@ -2,6 +2,7 @@
 
 #include "diagnostic-error.hpp"
 
+#include <algorithm>
 #include <exception>
 #include <future>
 #include <stdexcept>
@@ -18,17 +19,27 @@ RtmpConnectionFactory assign_connection(RtmpConnectionFactory &factory)
 	} catch (...) {
 		creation_error = std::current_exception();
 	}
-	return [connection = std::move(connection), creation_error]() mutable {
+	return [connection = std::move(connection), creation_error, allocate = factory, first = true]() mutable {
 		if (creation_error)
 			std::rethrow_exception(creation_error);
-		return std::move(*connection);
+		if (first) { first = false; return std::move(*connection); }
+		return allocate();
 	};
 }
 } // namespace
 
 MultiTargetSender::MultiTargetSender(RtmpConnectionFactory factory, SenderConfig config)
-	: factory_(std::move(factory)), config_(config)
+	: factory_([allocate = std::make_shared<RtmpConnectionFactory>(std::move(factory)),
+		guard = std::make_shared<std::mutex>()] {
+		std::scoped_lock lock(*guard);
+		return (*allocate)();
+	}), config_(config)
 {
+}
+
+MultiTargetSender::~MultiTargetSender()
+{
+	stop();
 }
 
 bool MultiTargetSender::start(RtmpTarget primary, std::string primary_name, MultistreamConfiguration configuration,
@@ -90,6 +101,8 @@ bool MultiTargetSender::start(RtmpTarget primary, std::string primary_name, Mult
 	}
 	if (!primary_started) {
 		for (auto &worker : workers)
+			worker.consumer->request_stop();
+		for (auto &worker : workers)
 			worker.consumer->stop();
 		return false;
 	}
@@ -117,9 +130,10 @@ void MultiTargetSender::consume(const std::shared_ptr<const ReleasedPacketBatch>
 				throw;
 			// Do not join a slow network worker from the encoded-packet callback.
 			// Mark it unavailable and let normal output shutdown own the join.
+			worker.consumer->request_stop();
 			std::scoped_lock lock(mutex_);
 			for (auto &stored : workers_) {
-				if (stored.id == worker.id)
+				if (stored.consumer == worker.consumer)
 					stored.isolated_error = diagnostic_error(DiagnosticCode::SecondaryTargetFailed,
 						"Secondary delivery stopped: " + std::string(exception.what()));
 			}
@@ -142,9 +156,10 @@ void MultiTargetSender::discontinuity(const PacketDiscontinuity &event)
 		} catch (const std::exception &exception) {
 			if (worker.primary)
 				throw;
+			worker.consumer->request_stop();
 			std::scoped_lock lock(mutex_);
 			for (auto &stored : workers_)
-				if (stored.id == worker.id)
+				if (stored.consumer == worker.consumer)
 					stored.isolated_error = diagnostic_error(DiagnosticCode::SecondaryTargetFailed,
 						"Secondary discontinuity handling failed: " + std::string(exception.what()));
 		}
@@ -156,17 +171,31 @@ void MultiTargetSender::stop() noexcept
 	std::vector<Worker> workers;
 	{
 		std::scoped_lock lock(mutex_);
-		workers.swap(workers_);
+		workers = workers_;
+		++stops_in_progress_;
 	}
 	for (auto &worker : workers)
+		worker.consumer->request_stop();
+	for (auto &worker : workers)
 		worker.consumer->stop();
+	{
+		std::scoped_lock lock(mutex_);
+		// Erase only this shutdown's consumers, never a newly started session
+		// with the same destination IDs. Keep rows visible until joins finish.
+		std::erase_if(workers_, [&workers](const Worker &stored) {
+			return std::any_of(workers.begin(), workers.end(), [&stored](const Worker &stopped) {
+				return stored.consumer == stopped.consumer;
+			});
+		});
+		--stops_in_progress_;
+	}
 }
 
 MultiTargetStatus MultiTargetSender::status() const
 {
 	MultiTargetStatus result;
 	std::scoped_lock lock(mutex_);
-	bool primary_running = false;
+	SenderState primary_state = SenderState::Stopped;
 	for (const auto &worker : workers_) {
 		auto sender = worker.consumer->status();
 		if (!worker.isolated_error.empty()) {
@@ -175,12 +204,54 @@ MultiTargetStatus MultiTargetSender::status() const
 		}
 		result.sent_bytes += sender.sent_bytes;
 		if (worker.primary)
-			primary_running = sender.state == SenderState::Running || sender.state == SenderState::Reconnecting;
+			primary_state = sender.state;
 		result.destinations.push_back({worker.id, worker.name, worker.primary, std::move(sender)});
 	}
-	result.aggregate_state = primary_running ? SenderState::Running
-		: (result.destinations.empty() ? SenderState::Stopped : SenderState::Failed);
+	result.aggregate_state = stops_in_progress_ != 0 ? SenderState::Stopping : primary_state;
 	return result;
+}
+
+bool MultiTargetSender::delivery_ready(std::uint64_t epoch, std::uint64_t ticket, bool boundary) const
+{
+ std::scoped_lock lock(mutex_);
+ if(workers_.empty())return false;
+ bool ready=true;
+ for(const auto &worker:workers_) {
+  const auto status=worker.consumer->status();
+  auto &wait=boundary ? worker.boundary_wait : worker.ticket_wait;
+  if(!worker.primary && (!worker.isolated_error.empty() || status.state==SenderState::Failed))continue;
+  // A secondary that is reconnecting, or reconnected but not yet resumed at a
+  // fresh keyframe, drops media instead of queueing it, so it cannot stall the
+  // others. Its reconnect budget and bounded queue decide failure, not this gate.
+  const bool resuming=status.state==SenderState::Reconnecting ||
+   (status.state==SenderState::Running && status.reconnect_count!=0 && status.published_epoch==0);
+  if(!worker.primary && resuming){wait.since.reset();continue;}
+  const bool delivered=boundary ? worker.consumer->boundary_delivered(epoch) : worker.consumer->delivered(epoch,ticket);
+  if(delivered)continue;
+  if(worker.primary){ready=false;continue;}
+  const auto now=std::chrono::steady_clock::now();
+  // Measure time without delivery progress, not time on one query: callers
+  // alternate between tickets each tick. A wait left unpolled has ended.
+  const auto progress=boundary ? status.published_epoch : (status.delivered_epoch==epoch ? status.delivery_ticket : 0);
+  if(!wait.since || wait.epoch!=epoch || wait.progress!=progress || now-wait.polled>std::chrono::milliseconds(250)) {
+   wait.epoch=epoch;wait.progress=progress;wait.since=now;
+  }
+  wait.polled=now;
+  if(now-*wait.since<std::chrono::seconds(1)){ready=false;continue;}
+  worker.isolated_error="TRANSITION_SECONDARY_TIMEOUT: boundary delivery stalled";
+  worker.consumer->request_stop(); // owner shutdown joins; never wait here
+ }
+ return ready;
+}
+
+bool MultiTargetSender::delivered(std::uint64_t epoch, std::uint64_t ticket) const
+{
+ return delivery_ready(epoch,ticket,false);
+}
+
+bool MultiTargetSender::boundary_delivered(std::uint64_t epoch) const
+{
+ return delivery_ready(epoch,0,true);
 }
 
 } // namespace active_delay

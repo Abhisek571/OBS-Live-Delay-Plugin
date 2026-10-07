@@ -122,6 +122,15 @@ void rejects_annex_b_video_before_sending_it_to_rtmp()
 
 void rejects_invalid_avc_nal_lengths()
 {
+	for (const unsigned size : {1U, 256U, 300U, 511U}) {
+		auto valid_muxer = make_muxer();
+		std::vector<uint8_t> payload(size + 4, 0x55);
+		payload[0] = payload[1] = 0; payload[2] = static_cast<uint8_t>(size >> 8); payload[3] = static_cast<uint8_t>(size);
+		payload[4] = 0x65;
+		std::vector<FlvTag> valid_tags; std::string valid_error;
+		require(valid_muxer.mux({packet(PacketKind::Video, payload, 0, 0, true)}, valid_tags, valid_error),
+			"valid AVC lengths that resemble start codes must survive native prebuffer publication");
+	}
 	auto muxer = make_muxer();
 	std::vector<FlvTag> tags;
 	std::string error;

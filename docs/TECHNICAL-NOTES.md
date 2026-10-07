@@ -20,13 +20,23 @@ Media path:
 
 ## Startup and playback behaviour
 
-- Encoded capture begins before codec headers are required.
-- Audio received before both H.264 and AAC headers is discarded.
+- **Arm** starts a `PipelineOwner` that captures compressed programme off air
+  into the `DelayController`. No destination is read or connected until the
+  buffer is `READY` and the user presses **Start Delayed Broadcast**.
+- The holding scene is rendered by an isolated `obs_view` with its own x264
+  encoder and generated silent AAC (`holding-obs-capture.cpp`). It runs for the
+  whole session and never changes the OBS programme or recording.
+- `TransitionCoordinator` splices holding and programme inside the outgoing
+  stream. Each action reserves a new epoch, fences queued network media, sends
+  a silent AAC drain, paces holding, and resumes programme on a fresh keyframe
+  with a silent audio bridge. Pacing stops once the resume boundary is
+  delivered.
+- `transition-codec.hpp` admits only codecs whose switch timing it can prove:
+  progressive AVC with VUI timing and bounded reordering, and 1024-sample LC
+  AAC at 44.1/48 kHz. NVENC headers currently fail this check.
 - H.264 Annex-B packets are converted to FLV-compatible length-prefixed AVC.
-- Delayed playback resumes on a video keyframe.
-- The holding scene remains active while a delay builds or changes.
-- Return Live clears buffered delay without intentionally ending the stream.
-- Sender reconnects realign on a video keyframe.
+- Sender reconnects realign on a video keyframe. A reconnect caused by a
+  transition replaces the cancelled transport and keeps the new epoch's media.
 
 ## Current support boundary
 

@@ -118,6 +118,10 @@ void network_consumer_preserves_deterministic_direct_flv_bytes()
 	std::string error;
 	FlvCodecHeaders headers{{0x01, 0x64, 0x00, 0x1f}, {0x12, 0x10}};
 	require(consumer.start({"rtmp://fake/live", "test"}, headers, {}, error), "network consumer should start with fake RTMP");
+	const auto ready_deadline = std::chrono::steady_clock::now() + 2s;
+	while (consumer.status().state != SenderState::Running && std::chrono::steady_clock::now() < ready_deadline)
+		std::this_thread::sleep_for(1ms);
+	require(consumer.status().state == SenderState::Running, "asynchronous consumer must be ready before fresh media");
 	auto batch = std::make_shared<const ReleasedPacketBatch>(ReleasedPacketBatch{1, {video_packet(0x55)}});
 	consumer.consume(batch);
 	{
@@ -135,11 +139,46 @@ void network_consumer_preserves_deterministic_direct_flv_bytes()
 	}
 	consumer.stop();
 }
+void stale_epoch_is_rejected_after_discontinuity()
+{
+	auto state = std::make_shared<FakeConnectionState>();
+	NetworkPacketConsumer consumer([state] { return std::make_unique<FakeConnection>(state); },
+		{{16, 4096}, 0, 1ms, 1s});
+	std::string error;
+	require(consumer.start({"rtmp://fake/live", "test"}, {{1, 100, 0, 31}, {18, 16}}, {}, error), "start");
+	const auto deadline = std::chrono::steady_clock::now() + 2s;
+	while (consumer.status().state != SenderState::Running && std::chrono::steady_clock::now() < deadline)
+		std::this_thread::sleep_for(1ms);
+	require(consumer.status().state == SenderState::Running, "ready");
+	consumer.discontinuity({2, "return live"});
+	consumer.consume(std::make_shared<const ReleasedPacketBatch>(ReleasedPacketBatch{1, {video_packet(0xee)}}));
+	std::this_thread::sleep_for(50ms);
+	consumer.stop();
+	std::scoped_lock lock(state->mutex);
+	require(state->writes.size() == 3, "stale racing enqueue must not publish media after epoch invalidation");
+}
+void new_epoch_without_codec_headers_fails_closed()
+{
+ auto state=std::make_shared<FakeConnectionState>();
+ NetworkPacketConsumer consumer([state]{return std::make_unique<FakeConnection>(state);},{{16,4096},0,1ms,1s});
+ std::string error;
+ require(consumer.start({"rtmp://fake/live","test"},{{1,100,0,31},{18,16}},{},error),"start");
+ const auto deadline=std::chrono::steady_clock::now()+2s;
+ while(consumer.status().state!=SenderState::Running && std::chrono::steady_clock::now()<deadline)std::this_thread::sleep_for(1ms);
+ consumer.discontinuity({2,"new holding source"});
+ bool rejected=false;
+ try{consumer.consume(std::make_shared<const ReleasedPacketBatch>(ReleasedPacketBatch{2,{video_packet(0x48)}}));}
+ catch(const std::runtime_error &){rejected=true;}
+ consumer.stop();
+ require(rejected,"new source epoch must fail closed without explicit own codec headers");
+}
 } // namespace
 
 int main()
 {
 	try {
+		stale_epoch_is_rejected_after_discontinuity();
+        new_epoch_without_codec_headers_fails_closed();
 		dispatcher_shares_one_immutable_batch_and_keeps_other_consumers_running();
 		session_modes_are_explicit_and_mutually_exclusive();
 		network_consumer_preserves_deterministic_direct_flv_bytes();

@@ -16,17 +16,16 @@ constexpr std::int64_t kMaxCompositionTime = 0x007f'ffff;
 
 bool validate_avc_packet(const std::vector<std::uint8_t> &payload, std::string &error)
 {
-	if (payload.size() >= 3 && payload[0] == 0x00 && payload[1] == 0x00 &&
-		(payload[2] == 0x01 || (payload.size() >= 4 && payload[2] == 0x00 && payload[3] == 0x01))) {
-		error = diagnostic_error(DiagnosticCode::OutputMuxFailed,
-			"H.264 video packet is Annex-B instead of length-prefixed AVC");
-		return false;
-	}
+	// A valid four-byte AVC length (1 or 256..511) can resemble a start
+	// code. Validate the complete length-prefixed packet before diagnosing it.
+	const bool start_code_prefix = payload.size() >= 3 && payload[0] == 0x00 && payload[1] == 0x00 &&
+		(payload[2] == 0x01 || (payload.size() >= 4 && payload[2] == 0x00 && payload[3] == 0x01));
 
 	std::size_t offset = 0;
 	while (offset < payload.size()) {
 		if (payload.size() - offset < 4) {
 			error = diagnostic_error(DiagnosticCode::OutputMuxFailed,
+				start_code_prefix ? "H.264 video packet has invalid AVC framing (possible Annex-B input)" :
 				"H.264 AVC packet ends before its NAL-unit length field");
 			return false;
 		}
@@ -37,6 +36,7 @@ bool validate_avc_packet(const std::vector<std::uint8_t> &payload, std::string &
 		offset += 4;
 		if (nal_size == 0 || nal_size > payload.size() - offset) {
 			error = diagnostic_error(DiagnosticCode::OutputMuxFailed,
+				start_code_prefix ? "H.264 video packet has invalid AVC framing (possible Annex-B input)" :
 				"H.264 AVC packet contains an invalid NAL-unit length");
 			return false;
 		}
@@ -143,6 +143,7 @@ bool FlvMuxer::mux(std::vector<EncodedPacket> packets, std::vector<FlvTag> &tags
 		tag.type = packet.kind == PacketKind::Video ? FlvTagType::Video : FlvTagType::Audio;
 		tag.timestamp_ms = static_cast<std::uint32_t>(relative_dts_us / 1'000);
 		tag.keyframe = packet.kind == PacketKind::Video && packet.keyframe;
+		tag.audio_drain = packet.audio_drain;
 		if (packet.kind == PacketKind::Video) {
 			const auto composition_ms = (packet.pts_us - packet.dts_us) / 1'000;
 			if (composition_ms < kMinCompositionTime || composition_ms > kMaxCompositionTime) {
@@ -176,6 +177,13 @@ void FlvMuxer::reset_timeline() noexcept
 	has_base_timestamp_ = false;
 	base_dts_us_ = 0;
 	last_dts_us_ = 0;
+}
+
+void FlvMuxer::set_headers(FlvCodecHeaders headers)
+{
+	if (headers.avc_decoder_configuration.empty() || headers.aac_audio_specific_config.empty())
+		throw std::invalid_argument("Feed codec headers are empty");
+	headers_ = std::move(headers);
 }
 
 std::vector<std::uint8_t> make_flv_header()
