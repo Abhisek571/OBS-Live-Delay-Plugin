@@ -14,7 +14,10 @@ relying on it.
 
 - OBS Studio 32.2.1 on Windows x64
 - OBS **Settings → Output → Output Mode: Simple**
-- An H.264 streaming encoder such as NVENC H.264, x264, QSV H.264, or AMD H.264
+- The **x264** (software) H.264 streaming encoder. NVENC H.264 is currently
+  refused at **Arm Buffer** with `TRANSITION_CODEC_UNSUPPORTED`, because its
+  stream headers do not yet pass the safe-switch timing check. QSV and AMD
+  H.264 are untested.
 - AAC streaming audio
 - One primary streaming service configured normally in OBS
 - This version has runtime acceptance on Twitch only; other platforms and RTMP
@@ -36,23 +39,41 @@ relying on it.
 
 Do not press OBS's normal **Start Streaming** button. The dock owns the stream connection in this beta.
 
-### Start streaming and add delay
+### Start a broadcast
 
-1. In the Active Live Delay dock, select a **Holding Scene**.
-2. Press **Start Broadcast**.
-3. Wait until **Broadcast** says `BROADCAST ACTIVE`, then confirm the platform shows you live.
-4. Enter the desired **Delay length (seconds)**.
-5. Press **Start Delay**.
-6. The holding scene is shown while the buffer builds. For example, a 15-second delay needs roughly 15 seconds of buffering.
-7. When the target is ready, the dock reports `DELAYED` and restores the original scene.
+The broadcast goes out live. The plugin keeps the last N seconds of programme
+in a rolling buffer the whole time, so a delay can start instantly.
 
-### Remove delay
+1. In the Active Live Delay dock, choose the **Delay length (seconds)** and the
+   **Scene shown while an Emergency Dump rebuilds the delay** (the holding scene).
+2. Press **Arm Buffer**. The plugin starts capturing your programme; the status
+   shows `FILLING — OFF AIR`, then `READY — OFF AIR` once the buffer is full.
+3. Press **Start Broadcast (Live)** at any point after arming. The platform
+   receives your programme live. The status shows `BROADCASTING`, and the buffer
+   keeps filling in the background.
 
-- Press **Return Live (Keep Broadcasting)** to clear the delay while keeping every broadcast running.
+The holding scene is rendered privately with its own encoder. It never changes
+your OBS programme scene or recording.
+
+### While broadcasting
+
+- **Start Delay** rewinds the stream into the buffer at once and stays that many
+  seconds behind. Viewers see the last N seconds again; no holding scene is
+  shown. It is available once the buffer is full (N seconds after arming).
+- **Return Live (Keep Broadcasting)** jumps forward to your current programme at
+  the next keyframe. Viewers skip what was still delayed. The buffer is kept, so
+  **Start Delay** is available again straight away. Connections stay up.
+- **Emergency Dump (Rebuild Delay)** is available while delayed. It discards
+  everything still buffered and rebuilds the same delay behind the holding
+  scene. Content already sent to the platform cannot be recalled.
+
+The delay length is locked once armed. To change it, use **Stop / Disarm**,
+choose the new length, and arm again.
 
 ### End the broadcast
 
-Press **End Broadcast...** and confirm. This ends the primary and every enabled secondary broadcast.
+Press **Stop / Disarm** and confirm. This discards the buffer and ends the
+primary and every enabled secondary broadcast.
 
 ### Experimental: Native Multistream (three destinations)
 
@@ -85,15 +106,18 @@ Twitch, YouTube, and Kick combined runtime acceptance remains pending.
 
 | Button | Effect |
 |:---|:---|
-| **Start Broadcast** | Starts the primary and every enabled secondary through the plugin. Press this instead of OBS **Start Streaming**. |
-| **End Broadcast...** | Requires confirmation, then ends the primary and every enabled secondary. |
-| **Start Delay** | Starts the configured delay while the plugin output is active. |
-| **Return Live (Keep Broadcasting)** | Removes the delay but keeps all platform connections online. |
+| **Arm Buffer** | Starts capturing your programme into the rolling buffer. Nothing connects to a platform yet. |
+| **Start Broadcast (Live)** | Available once armed. Connects the primary and every enabled secondary and broadcasts live while the buffer keeps filling. Press this instead of OBS **Start Streaming**. |
+| **Stop / Disarm** | Discards the buffer and ends the primary and every enabled secondary. Requires confirmation while broadcasting. |
+| **Start Delay** | Rewinds the stream into the full buffer at once and stays that many seconds behind. Viewers see the last seconds again. |
+| **Return Live (Keep Broadcasting)** | Jumps forward to live and keeps the buffer, so Start Delay works again straight away. Connections stay online. |
+| **Emergency Dump (Rebuild Delay)** | Available while delayed; requires confirmation. Discards buffered programme and rebuilds the same delay behind the holding scene. |
 
 ## Before you use it
 
 - OBS's normal **Start Streaming** button and status bar do not own or represent the plugin output.
-- Direct start currently requires OBS **Simple Output** mode with H.264 video and AAC audio.
+- Direct start currently requires OBS **Simple Output** mode with x264 H.264 video and AAC audio.
+- The holding scene runs on its own x264 encoder for the whole session, so expect extra CPU use.
 - Do not try to switch an already-running normal OBS stream into the plugin; that workflow is blocked because Twitch ended the broadcast during handoff.
 - This is still a beta. Test with a non-critical stream before relying on it.
 - The current version has runtime acceptance on Twitch only. Do not infer

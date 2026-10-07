@@ -32,12 +32,15 @@ public:
 	using PrimaryFailureCallback = std::function<void(const std::string &)>;
 
 	explicit MultiTargetSender(RtmpConnectionFactory factory, SenderConfig config);
+	~MultiTargetSender() override;
 	bool start(RtmpTarget primary, std::string primary_name, MultistreamConfiguration configuration,
 		FlvCodecHeaders headers, PrimaryFailureCallback on_primary_failure, std::string &error);
 	void consume(const std::shared_ptr<const ReleasedPacketBatch> &batch) override;
 	void discontinuity(const PacketDiscontinuity &event) override;
 	void stop() noexcept override;
 	[[nodiscard]] MultiTargetStatus status() const;
+	bool boundary_delivered(std::uint64_t epoch) const override;
+	bool delivered(std::uint64_t epoch, std::uint64_t ticket) const override;
 
 private:
 	struct Worker {
@@ -45,13 +48,21 @@ private:
 		std::string name;
 		bool primary = false;
 		std::shared_ptr<NetworkPacketConsumer> consumer;
-		std::string isolated_error;
+		mutable std::string isolated_error;
+		struct DeliveryWait {
+			std::uint64_t epoch=0,progress=0;
+			std::optional<std::chrono::steady_clock::time_point> since;
+			std::chrono::steady_clock::time_point polled{};
+		};
+		mutable DeliveryWait ticket_wait,boundary_wait;
 	};
+	bool delivery_ready(std::uint64_t epoch, std::uint64_t ticket, bool boundary) const;
 
 	RtmpConnectionFactory factory_;
 	SenderConfig config_;
 	mutable std::mutex mutex_;
 	std::vector<Worker> workers_;
+	std::size_t stops_in_progress_ = 0;
 };
 
 } // namespace active_delay

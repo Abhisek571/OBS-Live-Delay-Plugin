@@ -3,7 +3,6 @@
 #include "diagnostic-error.hpp"
 #include "delayed-output-watchdog.hpp"
 #include "multistream-preflight.hpp"
-#include "scene-switch-policy.hpp"
 
 extern "C" {
 #include <obs-frontend-api.h>
@@ -52,6 +51,9 @@ DestinationCardText destination_card_text()
 	return {locale_text("Multistream.Enabled"), locale_text("Multistream.Platform"),
 		locale_text("Multistream.DisplayName"), locale_text("Multistream.ServerUrl"),
 		locale_text("Multistream.StreamKey"), locale_text("Multistream.HoldReveal"),
+		locale_text("Multistream.ShowSettings"), locale_text("Multistream.HideSettings"),
+		locale_text("Multistream.UnlockSettings"), locale_text("Multistream.LockSettings"),
+		locale_text("Multistream.LockedHint"),
 		{locale_text("Multistream.Platform.Custom"), locale_text("Multistream.Platform.Twitch"),
 			locale_text("Multistream.Platform.YouTube"), locale_text("Multistream.Platform.Kick")},
 		{locale_text("Multistream.Guidance.Custom"), locale_text("Multistream.Guidance.Twitch"),
@@ -223,6 +225,9 @@ ActiveDelayDock::ActiveDelayDock(std::shared_ptr<ActiveDelaySession> session, QW
 	start_output_button_ = new QPushButton(locale_text("Broadcast.Start"), this);
 	start_output_button_->setObjectName("ald_start_broadcast");
 	start_output_button_->setToolTip(locale_text("Broadcast.StartHelp"));
+	arm_buffer_button_ = new QPushButton(locale_text("Broadcast.Arm"), this);
+	arm_buffer_button_->setObjectName("ald_arm_buffer");
+	arm_buffer_button_->setToolTip(locale_text("Broadcast.ArmHelp"));
 	stop_output_button_ = new QPushButton(locale_text("Broadcast.End"), this);
 	stop_output_button_->setObjectName("ald_end_broadcast");
 	stop_output_button_->setToolTip(locale_text("Broadcast.EndHelp"));
@@ -232,6 +237,7 @@ ActiveDelayDock::ActiveDelayDock(std::shared_ptr<ActiveDelaySession> session, QW
 	broadcast_layout->addWidget(output_status_);
 	auto *broadcast_buttons = new QHBoxLayout();
 	broadcast_buttons->addWidget(start_output_button_);
+	broadcast_buttons->insertWidget(0, arm_buffer_button_);
 	broadcast_buttons->addWidget(stop_output_button_);
 	broadcast_layout->addLayout(broadcast_buttons);
 	layout->addWidget(broadcast_group);
@@ -255,6 +261,10 @@ ActiveDelayDock::ActiveDelayDock(std::shared_ptr<ActiveDelaySession> session, QW
 	delay_layout->addLayout(delay_form);
 	delay_layout->addWidget(enable_button_);
 	delay_layout->addWidget(return_live_button_);
+	emergency_dump_button_ = new QPushButton(locale_text("Delay.Dump"), this);
+	emergency_dump_button_->setObjectName("ald_emergency_dump");
+	emergency_dump_button_->setToolTip(locale_text("Delay.DumpHelp"));
+	delay_layout->addWidget(emergency_dump_button_);
 	layout->addWidget(delay_group);
 
 	auto *destination_group = new QGroupBox(locale_text("Multistream.Targets"), this);
@@ -304,9 +314,11 @@ ActiveDelayDock::ActiveDelayDock(std::shared_ptr<ActiveDelaySession> session, QW
 	refresh_scenes();
 	load_multistream_settings();
 	connect(start_output_button_, &QPushButton::clicked, this, &ActiveDelayDock::start_delayed_output);
+	connect(arm_buffer_button_, &QPushButton::clicked, this, &ActiveDelayDock::arm_buffer);
 	connect(stop_output_button_, &QPushButton::clicked, this, &ActiveDelayDock::stop_delayed_output);
 	connect(enable_button_, &QPushButton::clicked, this, &ActiveDelayDock::enable_delay);
 	connect(return_live_button_, &QPushButton::clicked, this, &ActiveDelayDock::return_live);
+	connect(emergency_dump_button_, &QPushButton::clicked, this, &ActiveDelayDock::emergency_dump);
 	timer_ = new QTimer(this);
 	timer_->setInterval(250);
 	connect(timer_, &QTimer::timeout, this, &ActiveDelayDock::refresh_status);
@@ -317,64 +329,37 @@ ActiveDelayDock::ActiveDelayDock(std::shared_ptr<ActiveDelaySession> session, QW
 ActiveDelayDock::~ActiveDelayDock()
 {
 	shutdown();
-	release_scene_switch_refs();
 }
 
 void ActiveDelayDock::enable_delay()
 {
-	std::string error;
-	const auto target = std::chrono::seconds(target_seconds_->value());
-	if (delayed_output_ && obs_output_active(delayed_output_)) {
-		const auto state = session_->controller.delay.status().state;
-		if (state == DelayState::BuildingDelay || state == DelayState::Delayed) {
-			report_operational_error(dock_error(DiagnosticCode::DelayControlUnavailable,
-				"Delay is already active; use Return Live before choosing a new delay length"),
-				LOG_WARNING);
-			return;
-		}
-		QString scene_error;
-		if (!switch_to_holding_scene(scene_error)) {
-			report_operational_error(scene_error, LOG_WARNING);
-			return;
-		}
-		if (!session_->controller.delay.set_target(target, &error)) {
-			restore_program_scene();
-			report_operational_error(QString::fromStdString(error), LOG_WARNING);
-			return;
-		}
-		persistent_output_error_.clear();
-		return;
-	}
-
-	if (obs_frontend_streaming_active()) {
-		report_operational_error(dock_error(DiagnosticCode::OutputControlConflict,
-			"Normal OBS streaming is active; stop it, then use Start Broadcast in this dock"),
-			LOG_WARNING);
-	} else {
-		report_operational_error(dock_error(DiagnosticCode::DelayControlUnavailable,
-			"Start Broadcast before starting the delay"),
-			LOG_WARNING);
-	}
+ std::string error;
+ if (!session_->request_transition({TransitionAction::SetDelay, std::chrono::seconds(target_seconds_->value())}, error))
+  report_operational_error(QString::fromStdString(error), LOG_WARNING);
+ else persistent_output_error_.clear();
 }
 
 void ActiveDelayDock::return_live()
 {
-	if (!delayed_output_ || !obs_output_active(delayed_output_)) {
-		report_operational_error(dock_error(DiagnosticCode::DelayControlUnavailable,
-			"Return Live is available only while this dock is broadcasting"),
-			LOG_WARNING);
-		return;
-	}
-	session_->controller.delay.return_live();
-	persistent_output_error_.clear();
-	restore_program_scene();
+ std::string error;
+ if (!session_->request_transition({TransitionAction::ReturnLive, {}}, error))
+  report_operational_error(QString::fromStdString(error), LOG_WARNING);
+ else persistent_output_error_.clear();
+}
+
+void ActiveDelayDock::emergency_dump()
+{
+ if (QMessageBox::warning(this, locale_text("Delay.DumpTitle"), locale_text("Delay.DumpConfirm"),
+  QMessageBox::Yes | QMessageBox::No, QMessageBox::No) != QMessageBox::Yes) return;
+ std::string error;
+ if (!session_->request_transition({TransitionAction::EmergencyDump, {}}, error))
+  report_operational_error(QString::fromStdString(error), LOG_WARNING);
+ else persistent_output_error_.clear();
 }
 
 void ActiveDelayDock::refresh_scenes()
 {
-	const auto selected_name = active_holding_scene_
-		? QString::fromUtf8(obs_source_get_name(active_holding_scene_))
-		: holding_scene_->currentText();
+	const auto selected_name = holding_scene_->currentText();
 	holding_scene_->clear();
 	obs_frontend_source_list scenes = {};
 	obs_frontend_get_scenes(&scenes);
@@ -404,22 +389,40 @@ void ActiveDelayDock::refresh_scenes()
 
 void ActiveDelayDock::refresh_status()
 {
+	if (output_flow_state_ == OutputFlowState::Stopping && session_->pipeline_status().stopped &&
+		(!delayed_output_ || !obs_output_active(delayed_output_))) {
+		if (delayed_output_) obs_output_release(delayed_output_);
+		delayed_output_ = nullptr; output_flow_state_ = OutputFlowState::Stopped;
+	}
 	if (check_delayed_output_health())
-		return;
-	if (check_scene_switch_health())
 		return;
 
 	const auto value = session_->controller.delay.status();
-	show_state(status_, state_text(value.state), state_colour(value.state));
-	current_delay_->setText(QString::number(value.current_delay.count() / 1'000'000.0, 'f', 1) + " sec");
+	const auto pipeline = session_->pipeline_status();
+	session_->refresh_network_status();
+	const bool on_air = broadcast_on_air(pipeline);
+	if (on_air)
+		show_state(status_, state_text(value.state), state_colour(value.state));
+	else
+		show_state(status_, "● " + locale_text("Delay.Status.OffAir"), "#8a8f98");
+	if (on_air && (pipeline.transition_pending || !pipeline.ready))
+		show_state(status_, locale_text("Delay.Status.Pending"), "#d29922");
+	if (!pipeline.error.empty())
+		show_state(status_, QString::fromStdString(pipeline.error), "#e5534b");
+	current_delay_->setText(QString::number(value.current_delay.count() / 1'000'000.0, 'f', 1) + " / " +
+		QString::number(value.target_delay.count() / 1'000'000.0, 'f', 1) + " sec");
 	if (!value.error.empty()) {
 		show_state(status_, QString::fromStdString(value.error), "#e5534b");
 	} else if (!persistent_output_error_.isEmpty()) {
 		show_state(status_, persistent_output_error_, "#e5534b");
 	}
-	const bool delay_active = value.state == DelayState::BuildingDelay || value.state == DelayState::Delayed;
-	enable_button_->setEnabled(!delay_active);
-	target_seconds_->setEnabled(!delay_active);
+	const bool output_running = delayed_output_ && obs_output_active(delayed_output_);
+	// Start Delay rewinds into the kept history, so it needs a full buffer.
+	enable_button_->setEnabled(output_running && pipeline.phase == BroadcastPhase::Broadcasting && pipeline.ready &&
+		pipeline.holding_ready && value.state == DelayState::Live && session_->controller.delay.prebuffer_ready());
+	target_seconds_->setEnabled(!output_running && output_flow_state_ == OutputFlowState::Stopped);
+	target_seconds_->setToolTip(locale_text("Broadcast.DelayLocked"));
+	holding_scene_->setEnabled(!output_running);
 	const bool destination_editable = output_flow_state_ == OutputFlowState::Stopped &&
 		(!delayed_output_ || !obs_output_active(delayed_output_));
 	for (auto *card : secondary_cards_) {
@@ -430,7 +433,18 @@ void ActiveDelayDock::refresh_status()
 	refresh_preflight_summary();
 
 	if (delayed_output_ && obs_output_active(delayed_output_)) {
-		show_state(output_status_, "● " + locale_text("Broadcast.Status.Active"), "#39b54a");
+		const char *phase = "Broadcast.Status.Arming";
+		switch (pipeline.phase) {
+		case BroadcastPhase::Filling: phase = "Broadcast.Status.Filling"; break;
+		case BroadcastPhase::Ready: phase = "Broadcast.Status.Ready"; break;
+		case BroadcastPhase::Connecting: phase = "Broadcast.Status.Connecting"; break;
+		case BroadcastPhase::Broadcasting: phase = "Broadcast.Status.Active"; break;
+		case BroadcastPhase::Stopping: phase = "Broadcast.Status.Stopping"; break;
+		case BroadcastPhase::Failed: phase = "Broadcast.Status.Failed"; break;
+		case BroadcastPhase::Stopped: phase = "Broadcast.Status.Stopped"; break;
+		case BroadcastPhase::Arming: break;
+		}
+		show_state(output_status_, "● " + locale_text(phase), pipeline.phase == BroadcastPhase::Broadcasting ? "#39b54a" : "#d29922");
 	} else {
 		if (delayed_output_) {
 			const auto *last_error = obs_output_get_last_error(delayed_output_);
@@ -445,87 +459,29 @@ void ActiveDelayDock::refresh_status()
 				persistent_output_error_, "#e5534b");
 	}
 	const auto output_active = delayed_output_ && obs_output_active(delayed_output_);
-	start_output_button_->setEnabled(!output_active && output_flow_state_ == OutputFlowState::Stopped);
-	stop_output_button_->setEnabled(output_active);
-	return_live_button_->setEnabled(output_active);
+	arm_buffer_button_->setEnabled(!delayed_output_ && output_flow_state_ == OutputFlowState::Stopped);
+	start_output_button_->setEnabled(output_active && (pipeline.phase == BroadcastPhase::Ready || pipeline.phase == BroadcastPhase::Filling));
+	stop_output_button_->setEnabled(output_active && output_flow_state_ != OutputFlowState::Stopping);
+	const bool delayed = value.state != DelayState::Live;
+	return_live_button_->setEnabled(output_active && pipeline.phase == BroadcastPhase::Broadcasting && pipeline.ready && pipeline.holding_ready && delayed);
+	emergency_dump_button_->setEnabled(output_active && pipeline.phase == BroadcastPhase::Broadcasting && pipeline.ready && pipeline.holding_ready && delayed);
 
-	if (value.state == DelayState::Delayed && output_flow_state_ == OutputFlowState::DelayedOutput)
-		restore_program_scene();
-}
-
-bool ActiveDelayDock::check_scene_switch_health()
-{
-	if (scene_switch_action_in_progress_)
-		return false;
-	const auto transition_active = original_scene_ || active_holding_scene_;
-	if (!transition_active)
-		return false;
-
-	auto *current_scene = obs_frontend_get_current_scene();
-	const auto delay_building = session_->controller.delay.status().state == DelayState::BuildingDelay;
-	const auto program_available = original_scene_ && !obs_source_removed(original_scene_) &&
-		obs_scene_from_source(original_scene_);
-	const auto holding_available = active_holding_scene_ && !obs_source_removed(active_holding_scene_) &&
-		obs_scene_from_source(active_holding_scene_);
-	const auto health = evaluate_scene_switch_health(true, delay_building, program_available, holding_available,
-		current_scene == active_holding_scene_);
-	if (current_scene)
-		obs_source_release(current_scene);
-	if (health == SceneSwitchHealth::Healthy || health == SceneSwitchHealth::Inactive)
-		return false;
-
-	session_->controller.delay.return_live();
-	switch (health) {
-	case SceneSwitchHealth::HoldingUnavailable:
-		persistent_output_error_ = dock_error(DiagnosticCode::HoldingSceneInvalid,
-			"The selected Holding Scene was removed while delay was building; delay returned live");
-		restore_program_scene();
-		break;
-	case SceneSwitchHealth::HoldingInterrupted:
-		persistent_output_error_ = dock_error(DiagnosticCode::HoldingSceneInterrupted,
-			"The Program Scene changed before delay finished building; delay returned live");
-		release_scene_switch_refs();
-		break;
-	case SceneSwitchHealth::ProgramUnavailable:
-		persistent_output_error_ = dock_error(DiagnosticCode::ProgramSceneUnavailable,
-			"The saved Program Scene was removed while delay was building; delay returned live");
-		release_scene_switch_refs();
-		break;
-	case SceneSwitchHealth::Inactive:
-	case SceneSwitchHealth::Healthy: return false;
 	}
-	blog(LOG_WARNING, "[active-live-delay] %s", persistent_output_error_.toUtf8().constData());
-	show_state(status_, persistent_output_error_, "#e5534b");
-	return true;
-}
 
 void ActiveDelayDock::handle_frontend_event(obs_frontend_event event)
 {
-	if (scene_switch_action_in_progress_)
-		return;
-	switch (event) {
-	case OBS_FRONTEND_EVENT_SCENE_CHANGED:
-		check_scene_switch_health();
-		break;
-	case OBS_FRONTEND_EVENT_SCENE_LIST_CHANGED:
-	case OBS_FRONTEND_EVENT_SCENE_COLLECTION_CHANGED:
-	case OBS_FRONTEND_EVENT_SCENE_COLLECTION_RENAMED:
-		refresh_scenes();
-		check_scene_switch_health();
-		break;
-	case OBS_FRONTEND_EVENT_SCENE_COLLECTION_CHANGING:
-	case OBS_FRONTEND_EVENT_SCENE_COLLECTION_CLEANUP:
-		if (original_scene_ || active_holding_scene_) {
-			session_->controller.delay.return_live();
-			persistent_output_error_ = dock_error(DiagnosticCode::ProgramSceneUnavailable,
-				"The scene collection changed while delay was building; delay returned live");
-			release_scene_switch_refs();
-			blog(LOG_WARNING, "[active-live-delay] %s", persistent_output_error_.toUtf8().constData());
-			show_state(status_, persistent_output_error_, "#e5534b");
-		}
-		break;
-	default: break;
-	}
+ switch (event) {
+ case OBS_FRONTEND_EVENT_SCENE_LIST_CHANGED:
+ case OBS_FRONTEND_EVENT_SCENE_COLLECTION_CHANGED:
+ case OBS_FRONTEND_EVENT_SCENE_COLLECTION_RENAMED:
+  refresh_scenes(); break;
+ case OBS_FRONTEND_EVENT_SCENE_COLLECTION_CHANGING:
+ case OBS_FRONTEND_EVENT_SCENE_COLLECTION_CLEANUP:
+  // Source removal cannot fall back to live programme during holding.
+  if (delayed_output_ && obs_output_active(delayed_output_)) obs_output_stop(delayed_output_);
+  break;
+ default: break;
+ }
 }
 
 void ActiveDelayDock::load_multistream_settings()
@@ -759,21 +715,18 @@ bool ActiveDelayDock::start_delayed_output_with(obs_encoder_t *video_encoder, ob
 		return false;
 	}
 
-	auto *output = obs_output_create("active_delay_rtmp_output", "active_delay_stream", nullptr, nullptr);
+	auto *settings = obs_data_create();
+	obs_data_set_int(settings, "programme_audio", static_cast<int64_t>(reinterpret_cast<intptr_t>(audio_encoder)));
+	obs_data_set_int(settings, "programme_service", static_cast<int64_t>(reinterpret_cast<intptr_t>(service)));
+	auto *output = obs_output_create("active_delay_rtmp_output", "active_delay_stream", settings, nullptr);
+	obs_data_release(settings);
 	if (!output) {
 		error = dock_error(DiagnosticCode::DirectOutputCreationFailed,
 			"OBS could not create the Active Live Delay output");
 		return false;
 	}
 	obs_output_set_video_encoder(output, video_encoder);
-	obs_output_set_audio_encoder(output, audio_encoder, 0);
-	obs_output_set_service(output, service);
-	if (obs_output_get_service(output) != service) {
-		error = dock_error(DiagnosticCode::DirectServiceAttachFailed,
-			"OBS could not attach the configured streaming service to Active Live Delay");
-		obs_output_release(output);
-		return false;
-	}
+
 	if (!obs_output_start(output)) {
 		const auto *last_error = obs_output_get_last_error(output);
 		error = dock_error(DiagnosticCode::DirectOutputStartFailed,
@@ -783,9 +736,11 @@ bool ActiveDelayDock::start_delayed_output_with(obs_encoder_t *video_encoder, ob
 	}
 	delayed_output_ = output;
 	output_flow_state_ = OutputFlowState::DelayedOutput;
+	for (auto *card : secondary_cards_)
+		card->set_editable(false);
 	delayed_output_started_at_ = std::chrono::steady_clock::now();
 	persistent_output_error_.clear();
-	blog(LOG_INFO, "[active-live-delay] Delayed RTMP output started successfully");
+	blog(LOG_INFO, "[active-live-delay] Programme buffer capture armed off-air");
 	return true;
 }
 
@@ -860,8 +815,7 @@ bool ActiveDelayDock::start_delayed_output_direct(QString &error)
 		obs_data_set_int(video_settings, "bitrate", static_cast<long long>(video_bitrate));
 		obs_data_set_int(audio_settings, "bitrate", static_cast<long long>(audio_bitrate));
 	}
-	if (session_->operating_mode() == OperatingMode::NativeMultistream)
-		obs_data_set_int(video_settings, "keyint_sec", 2);
+	obs_data_set_int(video_settings, "keyint_sec", 2);
 	if (!validate_multistream_preflight(profile, video_settings, error)) {
 		obs_data_release(video_settings);
 		obs_data_release(audio_settings);
@@ -885,7 +839,7 @@ bool ActiveDelayDock::start_delayed_output_direct(QString &error)
 	obs_encoder_release(video_encoder);
 	obs_encoder_release(audio_encoder);
 	if (started)
-		blog(LOG_INFO, "[active-live-delay] Plugin-owned direct delayed output started");
+		blog(LOG_INFO, "[active-live-delay] Plugin-owned programme capture started off-air");
 	return started;
 }
 
@@ -925,20 +879,24 @@ void ActiveDelayDock::recover_from_delayed_output_failure(const QString &error)
 	if (delayed_output_) {
 		if (obs_output_active(delayed_output_))
 			obs_output_stop(delayed_output_);
-		obs_output_release(delayed_output_);
-		delayed_output_ = nullptr;
 	}
-	output_flow_state_ = OutputFlowState::Stopped;
-	session_->controller.delay.return_live();
+	output_flow_state_ = OutputFlowState::Stopping;
 	persistent_output_error_ = error;
-	restore_program_scene();
 }
 
 void ActiveDelayDock::start_delayed_output()
 {
+	std::string error;
+	if (obs_frontend_streaming_active()) error = "PREBUFFER_OUTPUT_CONFLICT: normal OBS streaming is active";
+	else if (session_->start_broadcast(error)) { persistent_output_error_.clear(); refresh_status(); return; }
+	report_operational_error(QString::fromStdString(error), LOG_WARNING);
+}
+
+void ActiveDelayDock::arm_buffer()
+{
 	if (delayed_output_ && obs_output_active(delayed_output_)) {
 		report_operational_error(dock_error(DiagnosticCode::OutputControlConflict,
-			"This dock is already broadcasting"),
+			"This dock is already armed; disarm before changing capture settings"),
 			LOG_WARNING);
 		return;
 	}
@@ -947,6 +905,25 @@ void ActiveDelayDock::start_delayed_output()
 			"Normal OBS streaming is active; stop it, then use Start Broadcast in this dock"),
 			LOG_WARNING);
 		return;
+	}
+
+	// Preserve validation without ever switching the Program scene.
+	auto *program_scene = obs_frontend_get_current_scene();
+	auto *holding_scene = obs_get_source_by_name(holding_scene_->currentText().toUtf8().constData());
+	const auto program_available = program_scene && !obs_source_removed(program_scene) && obs_scene_from_source(program_scene);
+	const auto holding_available = holding_scene && !obs_source_removed(holding_scene) && obs_scene_from_source(holding_scene);
+	const auto valid_holding = program_available && holding_available && program_scene != holding_scene;
+	if (program_scene) obs_source_release(program_scene);
+	if (holding_scene) obs_source_release(holding_scene);
+	if (!valid_holding) {
+		report_operational_error(dock_error(DiagnosticCode::HoldingSceneInvalid,
+			"Select an existing Holding Scene that differs from the current Program Scene"), LOG_WARNING);
+		return;
+	}
+	session_->set_holding_scene(holding_scene_->currentText().toStdString());
+	std::string target_error;
+	if (!session_->set_prebuffer_target(std::chrono::seconds(target_seconds_->value()), target_error)) {
+		report_operational_error(QString::fromStdString(target_error), LOG_WARNING); return;
 	}
 
 	if (delayed_output_) {
@@ -964,7 +941,7 @@ void ActiveDelayDock::start_delayed_output()
 
 void ActiveDelayDock::stop_delayed_output()
 {
-	if (delayed_output_ && obs_output_active(delayed_output_) &&
+	if (delayed_output_ && session_->pipeline_status().phase == BroadcastPhase::Broadcasting &&
 		QMessageBox::warning(this, locale_text("Multistream.StopConfirmTitle"),
 			locale_text("Multistream.StopConfirmText"), QMessageBox::Yes | QMessageBox::No, QMessageBox::No) !=
 			QMessageBox::Yes)
@@ -972,13 +949,9 @@ void ActiveDelayDock::stop_delayed_output()
 	if (delayed_output_) {
 		if (obs_output_active(delayed_output_))
 			obs_output_stop(delayed_output_);
-		obs_output_release(delayed_output_);
-		delayed_output_ = nullptr;
 	}
-	output_flow_state_ = OutputFlowState::Stopped;
-	session_->controller.delay.return_live();
+	output_flow_state_ = OutputFlowState::Stopping;
 	persistent_output_error_.clear();
-	restore_program_scene();
 }
 
 void ActiveDelayDock::shutdown()
@@ -995,85 +968,6 @@ void ActiveDelayDock::shutdown()
 		delayed_output_ = nullptr;
 	}
 	output_flow_state_ = OutputFlowState::Stopped;
-}
-
-bool ActiveDelayDock::switch_to_holding_scene(QString &error)
-{
-	if (original_scene_ || active_holding_scene_) {
-		error = dock_error(DiagnosticCode::HoldingSceneInvalid,
-			"A Holding Scene transition is already active");
-		return false;
-	}
-
-	auto *program_scene = obs_frontend_get_current_scene();
-	auto *holding_scene = obs_get_source_by_name(holding_scene_->currentText().toUtf8().constData());
-	const auto program_available = program_scene && !obs_source_removed(program_scene) && obs_scene_from_source(program_scene);
-	const auto holding_available = holding_scene && !obs_source_removed(holding_scene) && obs_scene_from_source(holding_scene);
-	if (!program_available || !holding_available || program_scene == holding_scene) {
-		if (program_scene)
-			obs_source_release(program_scene);
-		if (holding_scene)
-			obs_source_release(holding_scene);
-		error = dock_error(DiagnosticCode::HoldingSceneInvalid,
-			"Select an existing Holding Scene that differs from the current Program Scene");
-		return false;
-	}
-
-	original_scene_ = program_scene;
-	active_holding_scene_ = holding_scene;
-	scene_switch_action_in_progress_ = true;
-	obs_frontend_set_current_scene(active_holding_scene_);
-	scene_switch_action_in_progress_ = false;
-	auto *selected_scene = obs_frontend_get_current_scene();
-	const auto switched = selected_scene == active_holding_scene_;
-	if (selected_scene)
-		obs_source_release(selected_scene);
-	if (!switched) {
-		release_scene_switch_refs();
-		error = dock_error(DiagnosticCode::HoldingSceneInvalid,
-			"OBS did not activate the selected Holding Scene");
-		return false;
-	}
-	return true;
-}
-
-void ActiveDelayDock::restore_program_scene()
-{
-	if (!original_scene_ && !active_holding_scene_)
-		return;
-	if (!original_scene_ || obs_source_removed(original_scene_) || !obs_scene_from_source(original_scene_)) {
-		persistent_output_error_ = dock_error(DiagnosticCode::ProgramSceneUnavailable,
-			"The saved Program Scene is no longer available; select the intended scene manually");
-		blog(LOG_WARNING, "[active-live-delay] %s", persistent_output_error_.toUtf8().constData());
-		release_scene_switch_refs();
-		return;
-	}
-
-	scene_switch_action_in_progress_ = true;
-	obs_frontend_set_current_scene(original_scene_);
-	scene_switch_action_in_progress_ = false;
-	auto *selected_scene = obs_frontend_get_current_scene();
-	const auto restored = selected_scene == original_scene_;
-	if (selected_scene)
-		obs_source_release(selected_scene);
-	if (!restored) {
-		persistent_output_error_ = dock_error(DiagnosticCode::ProgramSceneUnavailable,
-			"OBS did not restore the saved Program Scene; select it manually");
-		blog(LOG_WARNING, "[active-live-delay] %s", persistent_output_error_.toUtf8().constData());
-	}
-	release_scene_switch_refs();
-}
-
-void ActiveDelayDock::release_scene_switch_refs()
-{
-	if (original_scene_) {
-		obs_source_release(original_scene_);
-		original_scene_ = nullptr;
-	}
-	if (active_holding_scene_) {
-		obs_source_release(active_holding_scene_);
-		active_holding_scene_ = nullptr;
-	}
 }
 
 void ActiveDelayDock::report_operational_error(const QString &error, int log_level)

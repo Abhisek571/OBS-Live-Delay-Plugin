@@ -16,6 +16,10 @@ struct FlvTag {
 	std::uint32_t timestamp_ms = 0;
 	std::vector<std::uint8_t> payload;
 	bool keyframe = false;
+	// Internal queue identity, never serialized to FLV.
+	std::uint64_t epoch = 0;
+	bool audio_drain = false;
+	std::uint64_t delivery_ticket = 0;
 
 	[[nodiscard]] std::size_t wire_size() const noexcept;
 };
@@ -32,6 +36,7 @@ public:
 	[[nodiscard]] std::vector<FlvTag> sequence_headers() const;
 	bool mux(std::vector<EncodedPacket> packets, std::vector<FlvTag> &tags, std::string &error);
 	void reset_timeline() noexcept;
+	void set_headers(FlvCodecHeaders headers);
 
 private:
 	FlvCodecHeaders headers_;

@@ -4,6 +4,29 @@ Release labels use `v0.1.NN-betaNN` for beta `NN`; for example, Beta 5 uses
 `v0.1.5-beta5`, Beta 5.2 uses `v0.1.52-beta52`, and Beta 5.3 uses
 `v0.1.53-beta53`.
 
+## Unreleased
+
+- Broadcasts start live while a rolling buffer keeps the last N seconds.
+  **Start Delay** rewinds into that buffer instantly (viewers see the last N
+  seconds again, no holding scene); **Return Live** jumps forward and keeps the
+  buffer so the delay can be restarted at once.
+- Renders the holding scene privately with its own encoder; it is shown only while
+  an Emergency Dump rebuilds the delay, never touching the OBS programme or recording.
+- Adds **Emergency Dump (Rebuild Delay)**.
+- Fixes: Start Delay while delayed no longer leaves a hole in the buffer;
+  switching to holding no longer leaves an audio gap; pacing stops once a resume
+  is on air, removing lasting latency and a spurious `TRANSITION_GUARD_OVERFLOW`;
+  a transition's own reconnect keeps its drain guard instead of stalling.
+- Fixes multistream delivery: reconnecting secondaries are no longer shut off,
+  a secondary stalled mid-transition is isolated instead of ending the broadcast,
+  and a transition during a reconnect or drain write no longer fails the
+  destination.
+- Hardening: holding outputs register at plugin load; concurrent audio-output
+  stops are serialized.
+- NVENC H.264 is refused at Arm (`TRANSITION_CODEC_UNSUPPORTED`); use x264.
+- Automated core and OBS-linked checks pass. Platform runtime acceptance is
+  still pending; this is not a production claim.
+
 ## v0.1.53-beta53
 
 - Adds the completed experimental three-destination Native Multistream dock:

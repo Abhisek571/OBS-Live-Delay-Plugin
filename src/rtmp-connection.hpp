@@ -19,6 +19,9 @@ class IRtmpConnection {
 public:
 	virtual ~IRtmpConnection() = default;
 
+	// connect/send/close belong to one worker and must have finite I/O budgets.
+	// interrupt is sticky, nonblocking and safe concurrently with those calls.
+	// A new sender session gets a fresh connection object.
 	virtual bool connect(const RtmpTarget &target, std::string &error) = 0;
 	virtual bool send(std::span<const std::uint8_t> bytes, std::string &error) = 0;
 	virtual void interrupt() noexcept = 0;

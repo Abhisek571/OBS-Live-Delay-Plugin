@@ -59,6 +59,13 @@ void BoundedSenderQueue::close(bool discard_pending) noexcept
 	available_.notify_all();
 }
 
+void BoundedSenderQueue::discard_pending() noexcept
+{
+	std::scoped_lock lock(mutex_);
+	tags_.clear();
+	bytes_ = 0;
+}
+
 void BoundedSenderQueue::reset() noexcept
 {
 	std::scoped_lock lock(mutex_);

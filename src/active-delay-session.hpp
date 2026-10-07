@@ -4,6 +4,7 @@
 #include "multistream-config.hpp"
 #include "multi-target-sender.hpp"
 #include "released-packet-dispatcher.hpp"
+#include "pipeline-owner.hpp"
 
 #include <cstdint>
 #include <mutex>
@@ -105,8 +106,51 @@ public:
 	}
 
 	ControllerResponsibility controller;
+	bool set_prebuffer_target(Microseconds target, std::string &error) {
+		std::scoped_lock lock(consumers.mutex);
+		if (consumers.active || target <= Microseconds{} || target > std::chrono::minutes(10)) {
+			error = "PREBUFFER_TARGET_INVALID: disarm before selecting a positive delay (maximum 600 seconds)";
+			return false;
+		}
+		prebuffer_target_ = target; return true;
+	}
+	Microseconds prebuffer_target() const { std::scoped_lock lock(consumers.mutex); return prebuffer_target_; }
+	bool start_broadcast(std::string &error) {
+		std::shared_ptr<PipelineOwner> owner;
+		{ std::scoped_lock lock(consumers.mutex); owner = pipeline_.lock(); }
+		if (!owner) { error = "PREBUFFER_NOT_ARMED: arm the buffer first"; return false; }
+		return owner->start_broadcast(error);
+	}
+	void attach_pipeline(std::shared_ptr<PipelineOwner> owner) {
+		std::scoped_lock lock(consumers.mutex);
+		pipeline_ = std::move(owner);
+	}
+	bool request_transition(TransitionRequest request, std::string &error) {
+		std::shared_ptr<PipelineOwner> owner;
+		{ std::scoped_lock lock(consumers.mutex); owner = pipeline_.lock(); }
+		if (!owner) { error = "PIPELINE_NOT_ACTIVE: transition unavailable"; return false; }
+		return owner->request(request, error);
+	}
+	void set_holding_scene(std::string name) { std::scoped_lock lock(consumers.mutex); holding_scene_ = std::move(name); }
+	PipelineStatus pipeline_status() const {
+		std::shared_ptr<PipelineOwner> owner;
+		{ std::scoped_lock lock(consumers.mutex); owner = pipeline_.lock(); }
+		return owner ? owner->status() : PipelineStatus{};
+	}
+	void refresh_network_status() {
+		std::shared_ptr<PipelineOwner> owner;
+		{ std::scoped_lock lock(consumers.mutex); owner = pipeline_.lock(); }
+		if (!owner) return;
+		if (auto multi = std::dynamic_pointer_cast<MultiTargetSender>(owner->consumer_snapshot()))
+			multistream.set_status(multi->status());
+	}
+	std::string holding_scene() const { std::scoped_lock lock(consumers.mutex); return holding_scene_; }
 	ConsumerLifecycleResponsibility consumers;
 	MultistreamResponsibility multistream;
+private:
+	std::weak_ptr<PipelineOwner> pipeline_;
+	Microseconds prebuffer_target_{};
+	std::string holding_scene_;
 };
 
 } // namespace active_delay

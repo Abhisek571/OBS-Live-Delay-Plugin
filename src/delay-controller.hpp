@@ -23,6 +23,8 @@ struct EncodedPacket {
 	std::int64_t pts_us = 0;
 	std::int64_t dts_us = 0;
 	bool keyframe = false;
+	// Internal: independent zero AAC, never programme audio.
+	bool audio_drain = false;
 };
 
 struct BufferLimits {
@@ -42,6 +44,15 @@ class DelayController {
 public:
 	DelayController();
 	explicit DelayController(BufferLimits limits);
+	bool arm(Microseconds target, std::string &error);
+	[[nodiscard]] bool prebuffer_ready() const;
+	bool begin_broadcast();
+	// Rewind mode: an armed controller passes programme through live while it
+	// keeps rolling history, so Start Delay can replay that history at once.
+	bool start_live();
+	bool rewind();
+	bool resume_live();
+	[[nodiscard]] bool rewind_mode() const;
 
 	bool set_target(Microseconds target);
 	bool set_target(Microseconds target, std::string *error);
@@ -55,6 +66,8 @@ public:
 
 private:
 	void promote_locked();
+	void roll_prebuffer_locked();
+	bool prebuffer_ready_locked() const;
 	bool discard_to_next_keyframe_locked(bool allow_current = true);
 	bool trim_to_target_locked();
 	bool normalize_timestamp_locked(EncodedPacket &packet);
@@ -63,6 +76,10 @@ private:
 	void set_error_locked(std::string message);
 
 	BufferLimits limits_;
+	bool armed_ = false;
+	bool passthrough_ = false, rewind_mode_ = false;
+	std::optional<Microseconds> playback_delay_;
+	std::optional<std::int64_t> video_watermark_, audio_watermark_;
 	mutable std::mutex mutex_;
 	std::deque<EncodedPacket> buffered_;
 	std::deque<EncodedPacket> ready_;
@@ -73,6 +90,9 @@ private:
 	std::optional<std::int64_t> last_input_dts_us_;
 	std::optional<std::int64_t> timestamp_offset_us_;
 	bool rebase_next_timestamp_ = false;
+	bool waiting_for_live_keyframe_ = true;
+	bool pending_trim_ = false;
+	std::int64_t live_keyframe_dts_us_ = 0;
 };
 
 } // namespace active_delay

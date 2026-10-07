@@ -45,6 +45,12 @@ DestinationCardWidget::DestinationCardWidget(QString slot_id, QString title, Des
 	reveal_ = new QPushButton(text_.reveal_key, this);
 	reveal_->setObjectName("ald_" + slot_id_ + "_reveal");
 	reveal_->setAutoDefault(false);
+	details_toggle_ = new QPushButton(this);
+	details_toggle_->setObjectName("ald_" + slot_id_ + "_details_toggle");
+	details_toggle_->setAutoDefault(false);
+	lock_toggle_ = new QPushButton(this);
+	lock_toggle_->setObjectName("ald_" + slot_id_ + "_lock_toggle");
+	lock_toggle_->setAutoDefault(false);
 	guidance_ = new QLabel(this);
 	guidance_->setObjectName("ald_" + slot_id_ + "_guidance");
 	guidance_->setWordWrap(true);
@@ -52,6 +58,9 @@ DestinationCardWidget::DestinationCardWidget(QString slot_id, QString title, Des
 	status_ = new QLabel(this);
 	status_->setObjectName("ald_" + slot_id_ + "_status");
 	status_->setWordWrap(true);
+	locked_hint_ = new QLabel(text_.locked_hint, this);
+	locked_hint_->setObjectName("ald_" + slot_id_ + "_locked_hint");
+	locked_hint_->setWordWrap(true);
 
 	auto *key_row = new QWidget(this);
 	auto *key_layout = new QHBoxLayout(key_row);
@@ -65,18 +74,32 @@ DestinationCardWidget::DestinationCardWidget(QString slot_id, QString title, Des
 	form->addRow(text_.display_name, name_);
 	form->addRow(text_.server_url, server_);
 	form->addRow(text_.stream_key, key_row);
+	details_ = new QWidget(this);
+	auto *details_layout = new QVBoxLayout(details_);
+	details_layout->setContentsMargins(0, 0, 0, 0);
+	details_layout->setSpacing(4);
+	details_layout->addWidget(enabled_);
+	details_layout->addLayout(form);
+	details_layout->addWidget(guidance_);
+	auto *controls = new QWidget(this);
+	auto *controls_layout = new QVBoxLayout(controls);
+	controls_layout->setContentsMargins(0, 0, 0, 0);
+	controls_layout->addWidget(details_toggle_);
+	controls_layout->addWidget(lock_toggle_);
 	auto *layout = new QVBoxLayout(this);
 	layout->setContentsMargins(8, 8, 8, 8);
 	layout->setSpacing(4);
 	layout->addWidget(status_);
-	layout->addWidget(enabled_);
-	layout->addLayout(form);
-	layout->addWidget(guidance_);
+	layout->addWidget(locked_hint_);
+	layout->addWidget(controls);
+	layout->addWidget(details_);
 
 	connect(enabled_, &QCheckBox::toggled, this, [this] { update_editability(); });
 	connect(platform_, &QComboBox::currentIndexChanged, this, [this] { update_platform_guidance(); });
 	connect(reveal_, &QPushButton::pressed, this, [this] { key_->setEchoMode(QLineEdit::Normal); });
 	connect(reveal_, &QPushButton::released, this, [this] { key_->setEchoMode(QLineEdit::Password); });
+	connect(details_toggle_, &QPushButton::clicked, this, [this] { toggle_details(); });
+	connect(lock_toggle_, &QPushButton::clicked, this, [this] { toggle_lock(); });
 	update_platform_guidance();
 	update_editability();
 }
@@ -102,6 +125,10 @@ void DestinationCardWidget::set_destination(const MultistreamDestination &destin
 void DestinationCardWidget::set_editable(bool editable)
 {
 	editable_ = editable;
+	if (!editable_) {
+		locked_ = true;
+		expanded_ = false;
+	}
 	update_editability();
 }
 
@@ -129,8 +156,9 @@ void DestinationCardWidget::update_platform_guidance()
 
 void DestinationCardWidget::update_editability()
 {
-	enabled_->setEnabled(editable_);
-	const auto fields_enabled = editable_ && enabled_->isChecked();
+	const auto details_enabled = editable_ && !locked_ && expanded_;
+	enabled_->setEnabled(details_enabled);
+	const auto fields_enabled = details_enabled && enabled_->isChecked();
 	platform_->setEnabled(fields_enabled);
 	name_->setEnabled(fields_enabled);
 	server_->setEnabled(fields_enabled);
@@ -138,6 +166,37 @@ void DestinationCardWidget::update_editability()
 	reveal_->setEnabled(fields_enabled);
 	if (!fields_enabled)
 		key_->setEchoMode(QLineEdit::Password);
+	update_disclosure_state();
+}
+
+void DestinationCardWidget::update_disclosure_state()
+{
+	details_->setVisible(!locked_ && expanded_);
+	locked_hint_->setVisible(locked_);
+	details_toggle_->setText(expanded_ ? text_.hide_settings : text_.show_settings);
+	details_toggle_->setEnabled(editable_ && !locked_);
+	lock_toggle_->setText(locked_ ? text_.unlock_settings : text_.lock_settings);
+	lock_toggle_->setEnabled(editable_);
+}
+
+void DestinationCardWidget::toggle_lock()
+{
+	if (!editable_)
+		return;
+	locked_ = !locked_;
+	if (locked_) {
+		expanded_ = false;
+		key_->setEchoMode(QLineEdit::Password);
+	}
+	update_editability();
+}
+
+void DestinationCardWidget::toggle_details()
+{
+	if (!editable_ || locked_)
+		return;
+	expanded_ = !expanded_;
+	update_editability();
 }
 
 } // namespace active_delay
