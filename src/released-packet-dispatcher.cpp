@@ -3,8 +3,31 @@
 #include <algorithm>
 #include <stdexcept>
 #include <utility>
+#include <limits>
 
 namespace active_delay {
+
+void ReleasedPacketDispatcher::observe_epoch(std::uint64_t epoch) const noexcept
+{
+	auto previous=publication_epoch_.load();
+	while(previous<epoch && !publication_epoch_.compare_exchange_weak(previous,epoch)) {}
+}
+
+std::uint64_t ReleasedPacketDispatcher::reserve_epoch(std::uint64_t after)
+{
+	auto previous=publication_epoch_.load();
+	for(;;) {
+		const auto base=std::max(previous,after);
+		if(base==std::numeric_limits<std::uint64_t>::max())throw std::runtime_error("TRANSITION_EPOCH_OVERFLOW");
+		if(publication_epoch_.compare_exchange_weak(previous,base+1))return base+1;
+	}
+}
+
+bool ReleasedPacketDispatcher::advance_epoch(std::uint64_t expected)
+{
+	if(expected==std::numeric_limits<std::uint64_t>::max())throw std::runtime_error("TRANSITION_EPOCH_OVERFLOW");
+	return publication_epoch_.compare_exchange_strong(expected,expected+1);
+}
 
 ReleasedPacketDispatcher::ConsumerId ReleasedPacketDispatcher::add_consumer(std::shared_ptr<ReleasedPacketConsumer> consumer)
 {
@@ -39,6 +62,7 @@ std::vector<ConsumerFailure> ReleasedPacketDispatcher::dispatch(std::shared_ptr<
 	std::vector<ConsumerFailure> failures;
 	for (const auto &[id, consumer] : snapshot_consumers()) {
 		try {
+			if(batch->epoch<publication_epoch_.load())break;
 			consumer->consume(batch);
 		} catch (const std::exception &exception) {
 			failures.push_back({id, exception.what()});
@@ -51,6 +75,7 @@ std::vector<ConsumerFailure> ReleasedPacketDispatcher::dispatch(std::shared_ptr<
 
 std::vector<ConsumerFailure> ReleasedPacketDispatcher::dispatch_discontinuity(PacketDiscontinuity event) const
 {
+	observe_epoch(event.epoch);
 	std::vector<ConsumerFailure> failures;
 	for (const auto &[id, consumer] : snapshot_consumers()) {
 		try {
@@ -62,6 +87,14 @@ std::vector<ConsumerFailure> ReleasedPacketDispatcher::dispatch_discontinuity(Pa
 		}
 	}
 	return failures;
+}
+
+bool ReleasedPacketDispatcher::delivered(std::uint64_t epoch, std::uint64_t ticket) const
+{
+ if(epoch!=publication_epoch_.load())return false;
+ for(const auto &[id,consumer]:snapshot_consumers())
+  if(!consumer->delivered(epoch,ticket))return false;
+ return true;
 }
 
 void ReleasedPacketDispatcher::stop_all() noexcept

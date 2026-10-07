@@ -29,6 +29,7 @@ public:
 	bool try_push(std::vector<FlvTag> tags);
 	[[nodiscard]] std::optional<FlvTag> wait_pop();
 	void close(bool discard_pending) noexcept;
+	void discard_pending() noexcept;
 	void reset() noexcept;
 	[[nodiscard]] SenderQueueStatus status() const;
 

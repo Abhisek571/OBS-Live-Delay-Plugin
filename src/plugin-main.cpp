@@ -1,6 +1,7 @@
 #include "active-delay-dock.hpp"
 #include "active-delay-output.hpp"
 #include "diagnostic-error.hpp"
+#include "holding-obs-capture.hpp"
 #include "scene-capture-probe.hpp"
 
 #include <memory>
@@ -85,6 +86,7 @@ bool obs_module_load(void)
 {
 	session = std::make_shared<active_delay::ActiveDelaySession>();
 	active_delay::register_active_delay_output(session);
+	active_delay::register_obs_holding_outputs();
 #if ACTIVE_DELAY_ENABLE_SCENE_PROBE
 	active_delay::register_scene_capture_probe();
 #endif

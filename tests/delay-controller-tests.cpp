@@ -29,6 +29,43 @@ void require(bool condition, std::string_view message)
 
 void builds_and_releases_delay()
 {
+	{
+		DelayController limited({10s, 1000}); std::string error;
+		require(!limited.arm(0s, error) && !limited.arm(-1s, error), "zero and negative targets cannot arm");
+		require(limited.arm(2s, error), "bounded controller must arm");
+		limited.ingest(video(0, true));
+		require(limited.status().state == DelayState::Error && limited.status().buffered_bytes == 0,
+			"armed memory exhaustion must fail closed and release retained payloads");
+	}
+	{
+		DelayController missing; std::string error;
+		require(missing.arm(1s, error), "missing-media fixture");
+		missing.ingest(audio(0)); missing.ingest(video(1000000, false));
+		require(!missing.prebuffer_ready() && !missing.begin_broadcast(), "no keyframe cannot become Ready");
+		missing.ingest(video(2000000, true)); missing.ingest(video(3000000, true));
+		require(!missing.prebuffer_ready(), "video without retained audio cannot become Ready");
+		require(!missing.set_target(2s, &error), "armed target changes require disarm");
+		missing.return_live(); require(missing.arm(1s, error), "rearm must be allowed after disarm");
+		require(!missing.prebuffer_ready() && missing.status().buffered_bytes == 0, "rearm must never reuse history");
+	}
+	{
+		DelayController armed({10s, 50000});
+		std::string error;
+		require(armed.arm(2s, error), "positive target must arm off-air");
+		for (int i = 0; i <= 36000; ++i) {
+			armed.ingest(video(i * 100000LL, i % 10 == 0));
+			armed.ingest(audio(i * 100000LL));
+			require(armed.take_ready_packets().empty(), "armed history must never be released");
+		}
+		require(armed.prebuffer_ready(), "rolling history must retain aged keyframe and audio");
+		require(armed.status().buffered_bytes <= 50000, "history must stay bounded");
+		require(armed.begin_broadcast(), "ready history must start without reset");
+		armed.ingest(video(3600100000LL, false));
+		auto packets = armed.take_ready_packets();
+		require(!packets.empty() && packets.front().keyframe && packets.front().dts_us == 3598000000LL,
+			"broadcast must begin at latest safely aged keyframe, not stale or live prefix");
+		require(armed.status().target_delay == 2s, "start must preserve target");
+	}
 	DelayController controller;
 	require(controller.set_target(2s), "2-second delay should be accepted");
 	controller.ingest(video(0, true));
@@ -84,6 +121,72 @@ void releases_delayed_packets_in_ingest_order()
 	require(controller.take_ready_packets().empty(), "the delayed drain must be exactly once");
 }
 
+void released_payloads_do_not_count_toward_retained_memory()
+{
+	DelayController controller({10s, 6'000});
+	require(controller.set_target(2s), "delay should be accepted");
+	for (std::int64_t second = 0; second < 1'000; ++second) {
+		controller.ingest(video(second * 1'000'000, true));
+		controller.ingest(audio(second * 1'000'000));
+		const auto state = controller.status();
+		require(state.state != DelayState::Error, "released payloads must not exhaust the memory limit");
+		const auto retained_seconds = second < 2 ? second + 1 : 3;
+		require(state.buffered_bytes == retained_seconds * (1'200 + 256),
+			"retained bytes must exclude moved video and audio payloads");
+		controller.take_ready_packets();
+	}
+	controller.return_live();
+	require(controller.status().buffered_bytes == 0, "return live must clear retained bytes");
+
+	DelayController empty_payloads({10s, 0});
+	require(empty_payloads.set_target(1s), "zero-byte buffering should be accepted");
+	for (std::int64_t second = 0; second < 4; ++second) {
+		empty_payloads.ingest({PacketKind::Video, {}, second * 1'000'000, second * 1'000'000, true});
+		require(empty_payloads.status().buffered_bytes == 0, "empty payloads must not underflow byte accounting");
+		require(empty_payloads.status().state != DelayState::Error, "empty payloads must fit a zero-byte limit");
+		empty_payloads.take_ready_packets();
+	}
+}
+
+void trimming_equal_timestamps_makes_progress()
+{
+	for (const bool duplicate_keyframe : {false, true}) {
+		DelayController controller;
+		require(controller.set_target(3s), "initial delay should be accepted");
+		controller.ingest(video(0, true));
+		controller.ingest(audio(1'000'000));
+		controller.ingest(video(1'000'000, true));
+		if (duplicate_keyframe)
+			controller.ingest(video(1'000'000, true));
+		controller.ingest(video(2'000'000, true));
+		controller.ingest(video(3'000'000, false));
+		require(controller.set_target(1s), "equal-DTS trim must finish at a safe later keyframe");
+		require(controller.status().current_delay == 1s, "trim must reach the requested delay");
+		require(controller.status().buffered_bytes == 2 * 1'200, "trim must account for every discarded packet");
+		controller.ingest(video(4'000'000, false));
+		const auto ready = controller.take_ready_packets();
+		require(ready.size() == 1 && ready.front().keyframe && ready.front().dts_us == 2'000'000,
+			"trimmed playback must start at the selected keyframe, not preceding equal-DTS audio");
+	}
+}
+
+void trimming_without_a_later_keyframe_fails()
+{
+ DelayController controller;
+ require(controller.set_target(3s), "initial delay should be accepted");
+ controller.ingest(video(0, true));
+ controller.ingest(video(1'000'000, false));
+ controller.ingest(video(3'000'000, false));
+ require(controller.set_target(1s), "reduction must remain pending rather than fail when a safe boundary is not yet available");
+ require(controller.status().state == DelayState::BuildingDelay, "missing safe boundary must withhold programme behind holding");
+ controller.ingest(video(4'000'000, true));
+ require(controller.take_ready_packets().empty(), "reduction cannot leak the unsafe dependent prefix");
+ controller.ingest(video(5'100'000, false));
+ const auto ready=controller.take_ready_packets();
+ require(!ready.empty() && ready.front().keyframe && ready.front().dts_us==4'000'000,
+  "pending reduction must resume at a safe new programme keyframe");
+}
+
 void returning_live_clears_the_buffer()
 {
 	DelayController controller;
@@ -97,6 +200,43 @@ void returning_live_clears_the_buffer()
 	require(state.current_delay == 0us, "returning live should clear buffered delay");
 	require(controller.take_ready_packets().empty(),
 		"returning live must discard delayed packets released concurrently before the transition");
+}
+
+void live_transitions_wait_for_video_keyframe_and_aligned_audio()
+{
+	for (int transition = 0; transition < 3; ++transition) {
+		DelayController controller;
+		require(controller.set_target(2s), "delay should be accepted");
+		controller.ingest(video(0, true));
+		controller.ingest(video(3'000'000, true));
+		if (transition == 0)
+			controller.return_live();
+		else if (transition == 1)
+			require(controller.set_target(0us), "zero delay should be accepted");
+		else
+			controller.reset_for_discontinuity("test reset");
+		controller.ingest(audio(4'000'000));
+		controller.ingest(video(4'000'000, false));
+		require(controller.take_ready_packets().empty(), "transition must discard audio and dependent video before the keyframe");
+		controller.ingest(video(5'000'000, true));
+		controller.ingest(audio(4'900'000));
+		controller.ingest(audio(5'000'000));
+		const auto ready = controller.take_ready_packets();
+		require(ready.size() == 2 && ready[0].keyframe && ready[1].kind == PacketKind::Audio,
+			"transition should resume with the keyframe and matching audio");
+	}
+}
+
+void changing_delay_discards_pending_releases()
+{
+	for (const auto target : {1s, 4s}) {
+		DelayController controller;
+		require(controller.set_target(2s), "delay should be accepted");
+		for (int second = 0; second <= 3; ++second)
+			controller.ingest(video(second * 1'000'000, true));
+		require(controller.set_target(target), "changed delay should be accepted");
+		require(controller.take_ready_packets().empty(), "old released media must not survive a delay change");
+	}
 }
 
 void starting_delay_discards_pending_live_packets()
@@ -119,14 +259,18 @@ void refuses_over_limit_target()
 
 void refuses_to_start_delayed_playback_without_a_keyframe()
 {
-	DelayController controller;
-	require(controller.set_target(1s), "delay should be accepted");
-	controller.ingest(video(0, false));
-	controller.ingest(audio(1'000'000));
-	const auto state = controller.status();
-	require(state.state == DelayState::Error, "delayed playback without a keyframe is unsafe");
-	require(!state.error.empty(), "missing keyframe should be reported");
-	require(state.error.starts_with("[ALD-E2007]"), "controller state errors must carry a stable diagnostic code");
+ DelayController controller;
+ require(controller.set_target(1s),"delay accepted");
+ controller.ingest(video(0,false));
+ controller.ingest(audio(1'000'000));
+ require(controller.status().state==DelayState::BuildingDelay,"initial build must wait behind holding when capture begins inside a GOP");
+ require(controller.take_ready_packets().empty(),"dependent initial prefix must not be published");
+ controller.ingest(video(2'000'000,true));
+ controller.ingest(audio(2'001'000));
+ controller.ingest(video(3'100'000,false));
+ const auto ready=controller.take_ready_packets();
+ require(!ready.empty() && ready.front().keyframe && ready.front().dts_us==2'000'000,
+  "initial build must resume from the first safe retained programme keyframe");
 }
 
 void enforces_the_memory_limit()
@@ -241,6 +385,11 @@ void discontinuity_discards_unreleased_media_and_starts_a_clean_epoch()
 int main()
 {
 	try {
+		live_transitions_wait_for_video_keyframe_and_aligned_audio();
+		changing_delay_discards_pending_releases();
+		trimming_equal_timestamps_makes_progress();
+		trimming_without_a_later_keyframe_fails();
+		released_payloads_do_not_count_toward_retained_memory();
 		builds_and_releases_delay();
 		preserves_live_timestamps_and_drains_each_packet_once();
 		releases_delayed_packets_in_ingest_order();

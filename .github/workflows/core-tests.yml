@@ -9,6 +9,8 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Install FFmpeg for codec-splice acceptance
+        run: choco install ffmpeg -y --no-progress
       - name: Configure core tests
         run: cmake -S . -B build -DACTIVE_DELAY_BUILD_PLUGIN=OFF -DACTIVE_DELAY_BUILD_TESTS=ON
       - name: Build core tests
