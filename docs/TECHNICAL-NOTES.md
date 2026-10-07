@@ -56,17 +56,13 @@ are not supported by this beta. Runtime acceptance remains required for A/V
 sync, reconnect, long-session stability, Return Live, stopping,
 and OBS shutdown.
 
-## Planned compatibility architecture
+## Native multistream
 
 Native Multistream fan-out is implemented as an experimental three-destination
 mode: one primary OBS service plus two independently enabled secondaries. The
 version-2 profile format, preflight, per-target metrics, and fake-server/UI
 checks are automated evidence only. Recorded Twitch, YouTube, and Kick runtime
 acceptance remains required before a platform-support or production claim.
-A compressed Delayed Program Source remains proposed. The source path is
-intended to let normal OBS, Aitum, SE.Live, and other output owners consume
-delayed programme video/audio as an ordinary OBS source. It is gated on proving
-isolated scene video and audio capture without a recursive scene path.
 
 ## Main code areas
 
