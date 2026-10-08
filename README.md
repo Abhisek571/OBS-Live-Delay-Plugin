@@ -1,7 +1,7 @@
 # OBS Live Delay Plugin
 
 <p align="center">
-  <img src="docs/production-warning.svg" width="100%" alt="Alpha: v0.2.0-alpha1 — read the entire README before use. Not yet tested on live platforms.">
+  <img src="docs/production-warning.svg" width="100%" alt="Alpha: v0.2.0-alpha1 — read the entire README before use. Not yet tested on live platforms. x264 only; NVIDIA NVENC is not supported yet.">
 </p>
 
 ## v0.2.0-alpha1
