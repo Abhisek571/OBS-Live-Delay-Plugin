@@ -6,9 +6,24 @@
 
 ## v0.2.0-alpha1
 
-OBS Live Delay Plugin lets you add, change, remove, or reduce a stream delay from
-an OBS dock. It is alpha software: use a non-critical test stream before
-relying on it.
+OBS Live Delay Plugin adds a "panic button" delay to a live stream from an OBS
+dock. You broadcast live, and the plugin always keeps the last few seconds in a
+buffer. When you need a delay, **Start Delay** rewinds viewers into that buffer
+at once; **Return Live** jumps them back to live. It can send the same stream to
+up to three destinations.
+
+It is alpha software: use a non-critical test stream before relying on it.
+
+### New in v0.2.0-alpha1
+
+- The broadcast now starts **live**, not delayed. The delay is always ready in
+  the background instead of having to build up first.
+- **Start Delay** is instant and shows no holding scene; **Return Live** keeps
+  the buffer so you can delay again straight away.
+- New **Emergency Dump (Rebuild Delay)** button.
+- The dock shows **OFF AIR** whenever nothing is being broadcast.
+
+See the [changelog](CHANGELOG.md) for the full list.
 
 ## Requirements
 
@@ -70,6 +85,19 @@ your OBS programme scene or recording.
 The delay length is locked once armed. To change it, use **Stop / Disarm**,
 choose the new length, and arm again.
 
+**Start Delay** and **Return Live** can also be bound to keys in OBS
+**Settings → Hotkeys** (search for "Active Live Delay").
+
+### Reading the dock status
+
+| Delay state | Meaning |
+|:---|:---|
+| `OFF AIR` | Nothing is being broadcast (not armed, filling, ready, or stopped). |
+| `LIVE (NO DELAY)` | Broadcasting live. The buffer is filling or full in the background. |
+| `DELAYED` | Broadcasting the set number of seconds behind live. |
+| `BUILDING DELAY` | Emergency Dump is rebuilding the delay; viewers see the holding scene. |
+| `TRANSITION PENDING` | A switch is waiting for a safe point in the stream. It clears by itself. |
+
 ### End the broadcast
 
 Press **Stop / Disarm** and confirm. This discards the buffer and ends the
@@ -77,9 +105,16 @@ primary and every enabled secondary broadcast.
 
 ### Experimental: Native Multistream (three destinations)
 
-Native Multistream is experimental. The dock can send the same delayed
-H.264/AAC rendition to the read-only primary OBS streaming service plus two
-independently enabled secondary RTMP/RTMPS destinations. Each secondary card
+Native Multistream is experimental. The dock can send the same stream to up to
+three destinations:
+
+| Destination | Where you set it up |
+|:---|:---|
+| **Primary** | OBS **Settings → Stream**. Its card in the dock is read-only and shows status only. |
+| **Secondary 1** | Its card in the dock (unlock, then open settings). |
+| **Secondary 2** | Its card in the dock (unlock, then open settings). |
+
+Each secondary can be turned on or off on its own. Each secondary card
 offers Custom RTMP, Twitch, YouTube, and Kick labels. The label supplies setup
 guidance only: paste the current official server URL and stream key yourself.
 The plugin does not guess endpoints or read credentials from another plugin.
@@ -123,9 +158,8 @@ Twitch, YouTube, and Kick combined runtime acceptance remains pending.
 - This version has not been tested on any live platform yet. Do not infer
   support for Twitch or any other RTMP service.
 - Return Live, reconnect behaviour, long sessions, and clean shutdown need broader testing.
-- Native Multistream is experimental and has automated three-destination
-  fake-server coverage only. Recorded Twitch, YouTube, and Kick runtime
-  acceptance remains required.
+- Native Multistream is experimental. It has been tested with three local RTMP
+  servers only; Twitch, YouTube, and Kick together are untested.
 - If the dock reports an `ALD-E####` error during testing, record the code and
   safe message with the OBS log. See the [error-code guide](docs/ERROR-CODES.md).
 
