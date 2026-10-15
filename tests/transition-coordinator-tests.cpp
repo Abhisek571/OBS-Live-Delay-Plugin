@@ -185,6 +185,29 @@ void resumed_programme_audio_waits_for_visible_picture(){
  require(c.programme_selected(),"programme resumes after paced visible boundary");
 }
 
+void resume_bridges_a_wide_audio_gap_but_not_missing_audio(){
+ // Programme audio resumes ~415 ms after the switch point (B-frames at a low
+ // frame rate do this); past one second the audio is genuinely missing.
+ for(const std::int64_t audio_at:{500000LL,1400000LL}){
+  DelayController controller;ReleasedPacketDispatcher dispatcher;auto sink=std::make_shared<Recorder>();dispatcher.add_consumer(sink);
+  TransitionCoordinator c(controller,dispatcher,1,programme_test_headers());c.holding_ready(holding_test_headers());
+  c.programme(packet(PacketKind::Video,0,true,0x50));c.programme(packet(PacketKind::Audio,1000,false,0x77));
+  c.request({TransitionAction::ReturnLive,{}});
+  c.holding({packet(PacketKind::Video,1000000,true,0x48),packet(PacketKind::Audio,1001000,false,0)});
+  const auto now=std::chrono::steady_clock::now();c.check_deadline(now+std::chrono::milliseconds(100));
+  c.programme(packet(PacketKind::Video,100000,true,0x50));c.programme(packet(PacketKind::Audio,audio_at,false,0x77));
+  bool unsupported=false;
+  try{c.check_deadline(now+std::chrono::milliseconds(2000));c.check_deadline(now+std::chrono::milliseconds(3000));}
+  catch(const std::runtime_error &e){unsupported=std::string(e.what()).starts_with("TRANSITION_TIMING_UNSUPPORTED");}
+  std::size_t silence=0;
+  for(const auto &b:sink->batches)for(const auto &p:b.packets)if(p.audio_drain)++silence;
+  if(audio_at<1000000)
+   require(!unsupported && c.programme_selected() && silence>=16,"a sub-second resume gap must be bridged with silence");
+  else
+   require(unsupported,"a resume gap past one second means missing programme audio and must fail closed");
+ }
+}
+
 void programme_boundary_delivery_timeout_is_not_enqueue_success(){
  struct AckRecorder : Recorder {bool ack=true;bool delivered(std::uint64_t,std::uint64_t)const override{return ack;}};
  DelayController controller;ReleasedPacketDispatcher dispatcher;auto sink=std::make_shared<AckRecorder>();dispatcher.add_consumer(sink);
@@ -306,5 +329,5 @@ void rewind_mode_switches_programme_directly(){
  }
 }
 }
-int main() { try { stale_epoch_programme_is_still_buffered(); resumed_programme_stops_pacing_after_boundary_delivery(); switch_to_holding_has_no_audio_gap();rewind_mode_switches_programme_directly(); superseding_guard_does_not_rebase_from_unpublished_future(); timed_work_is_revoked_and_bounded(); programme_boundary_delivery_timeout_is_not_enqueue_success(); resumed_programme_audio_waits_for_visible_picture(); codec_eligibility_is_fail_closed(); paced_holding_survives_long_rebuild_and_waits_for_delivery(); fast_programme_cannot_cancel_queued_guard(); independent_holding_keeps_programme_capture(); return_live_and_dump_keep_safe_boundaries(); missing_fresh_keyframe_times_out_fail_closed(); initial_mid_gop_wait_has_bounded_fail_closed_deadline(); drain_precedes_paced_holding_instead_of_timestamp_only_burst();std::cout<<"Transition tests passed\n"; }
+int main() { try { stale_epoch_programme_is_still_buffered(); resumed_programme_stops_pacing_after_boundary_delivery(); switch_to_holding_has_no_audio_gap();rewind_mode_switches_programme_directly(); superseding_guard_does_not_rebase_from_unpublished_future(); timed_work_is_revoked_and_bounded(); programme_boundary_delivery_timeout_is_not_enqueue_success(); resumed_programme_audio_waits_for_visible_picture(); resume_bridges_a_wide_audio_gap_but_not_missing_audio(); codec_eligibility_is_fail_closed(); paced_holding_survives_long_rebuild_and_waits_for_delivery(); fast_programme_cannot_cancel_queued_guard(); independent_holding_keeps_programme_capture(); return_live_and_dump_keep_safe_boundaries(); missing_fresh_keyframe_times_out_fail_closed(); initial_mid_gop_wait_has_bounded_fail_closed_deadline(); drain_precedes_paced_holding_instead_of_timestamp_only_burst();std::cout<<"Transition tests passed\n"; }
  catch(const std::exception &e) { std::cerr<<e.what()<<'\n';return 1; } }

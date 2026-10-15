@@ -21,7 +21,9 @@ class HoldingFeed {
 public:
 	using Clock = std::chrono::steady_clock;
 	static constexpr auto readiness_limit = std::chrono::seconds(5);
-	static constexpr std::int64_t queue_duration_us = 2'000'000;
+	// Wide enough that a CPU-starved holding encoder pausing for a few seconds
+	// does not end the broadcast; bytes and packet count stay bounded.
+	static constexpr std::int64_t queue_duration_us = 5'000'000;
 	static constexpr std::size_t queue_byte_limit = 16 * 1024 * 1024;
 	// Internal failure notification: must only fence publication/latch state,
 	// never reenter the feed, join, or destroy capture. Installed before start.

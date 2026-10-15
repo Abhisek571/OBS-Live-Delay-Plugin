@@ -26,8 +26,15 @@ class BoundedSenderQueue {
 public:
 	explicit BoundedSenderQueue(SenderQueueLimits limits);
 
-	bool try_push(std::vector<FlvTag> tags);
+	// Leaves tags untouched when the whole batch does not fit.
+	bool try_push(std::vector<FlvTag> &&tags);
 	[[nodiscard]] std::optional<FlvTag> wait_pop();
+	// Congestion relief: removes queued media video (never codec headers) and
+	// moves each removed delivery ticket onto the next kept tag, so a ticket is
+	// never acknowledged ahead of the media before it. Returns how many tags
+	// were removed; carried_ticket receives a ticket no kept tag could carry.
+	std::size_t drop_video(std::uint64_t &carried_ticket) noexcept;
+	[[nodiscard]] std::optional<std::uint32_t> front_timestamp_ms() const;
 	void close(bool discard_pending) noexcept;
 	void discard_pending() noexcept;
 	void reset() noexcept;

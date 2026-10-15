@@ -19,6 +19,8 @@ public:
 	bool connect(const RtmpTarget &target, std::string &error) override;
 	bool send(std::span<const std::uint8_t> bytes, std::string &error) override;
 	void interrupt() noexcept override;
+	void interrupt_after(std::chrono::milliseconds grace) noexcept override;
+	void clear_interrupt_after() noexcept override;
 	void close() noexcept override;
 
 private:
@@ -29,6 +31,7 @@ private:
 	AVIOContext *context_ = nullptr;
 	std::atomic_bool interrupted_ = false;
 	std::atomic<std::int64_t> deadline_ns_ = 0;
+	std::atomic<std::int64_t> cancel_deadline_ns_ = 0;
 	std::chrono::milliseconds io_timeout_{10'000};
 };
 

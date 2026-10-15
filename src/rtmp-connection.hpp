@@ -25,6 +25,11 @@ public:
 	virtual bool connect(const RtmpTarget &target, std::string &error) = 0;
 	virtual bool send(std::span<const std::uint8_t> bytes, std::string &error) = 0;
 	virtual void interrupt() noexcept = 0;
+	// Cancels only an operation still blocked when the grace period ends, so a
+	// prompt write completes untouched; clear disarms it once that write is done.
+	// Connections without a deadline cancel at once.
+	virtual void interrupt_after(std::chrono::milliseconds) noexcept { interrupt(); }
+	virtual void clear_interrupt_after() noexcept {}
 	virtual void close() noexcept = 0;
 };
 

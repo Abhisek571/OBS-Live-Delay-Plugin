@@ -72,6 +72,9 @@ try:
     result = subprocess.run([harness, obs_root, str(ports[0]), str(ports[1] if mode == 'multi' else 0)] + (['--guard'] if guard else []),
                             capture_output=True, text=True, timeout=28 if guard else 20)
     (artifacts / 'native-capture.log').write_text(redact(result.stdout + result.stderr), encoding='utf-8')
+    if result.returncode == 77:
+        print('SKIP: ' + result.stderr.strip().splitlines()[-1])
+        sys.exit(77)
     if result.returncode:
         raise AssertionError(f'native harness exit {result.returncode}: {redact(result.stderr[-1500:])}')
     for receiver in receivers:

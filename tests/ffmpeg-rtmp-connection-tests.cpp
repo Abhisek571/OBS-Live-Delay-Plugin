@@ -105,8 +105,11 @@ void handshake_has_a_wall_clock_deadline()
 	std::cout << "handshake deadline ms=" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - begin).count() << '\n';
 }
 
-void blocked_publication_write_is_bounded(bool cancel)
+enum class WriteStop { Deadline, Cancel, Grace };
+
+void blocked_publication_write_is_bounded(WriteStop stop)
 {
+	const bool cancel = stop != WriteStop::Deadline;
 	SilentReceiver reservation;
 	auto target = reservation.target();
 	target.io_timeout = cancel ? 5s : 300ms;
@@ -149,9 +152,14 @@ void blocked_publication_write_is_bounded(bool cancel)
 		receiver.get();
 		require(false, "local FFmpeg RTMP publication must connect");
 	}
+	// A grace-period cancellation armed by a transition must not cut prompt writes.
+	if (stop == WriteStop::Grace)
+		connection.interrupt_after(5s);
 	require(connection.send(make_flv_header(), error), "publication must send FLV header");
 	for (const auto &header : FlvMuxer({{0x01}, {0x12, 0x10}}).sequence_headers())
 		require(connection.send(serialize_flv_tag(header), error), "publication must prime codec headers");
+	if (stop == WriteStop::Grace)
+		connection.clear_interrupt_after();
 	const auto ready_deadline = std::chrono::steady_clock::now() + 1s;
 	while (!receiver_open && !receiver_done && std::chrono::steady_clock::now() < ready_deadline)
 		std::this_thread::sleep_for(1ms);
@@ -167,8 +175,10 @@ void blocked_publication_write_is_bounded(bool cancel)
 	auto write = std::async(std::launch::async, [&] { std::string write_error; return connection.send(bytes, write_error); });
 	const bool initially_blocked = write.wait_for(50ms) == std::future_status::timeout;
 	const auto cancel_begin = std::chrono::steady_clock::now();
-	if (cancel)
+	if (stop == WriteStop::Cancel)
 		connection.interrupt();
+	if (stop == WriteStop::Grace)
+		connection.interrupt_after(200ms);
 	const bool bounded = write.wait_for(1500ms) == std::future_status::ready;
 	if (!bounded)
 		connection.interrupt();
@@ -182,7 +192,8 @@ void blocked_publication_write_is_bounded(bool cancel)
 	require(receiver_result >= 0 && receiver_open && receiver_done, "local receiver must open and close cleanly");
 	require(initially_blocked && bounded && !sent, "a stalled publication write must be interrupted or time out");
 	require(write_elapsed < 2s && close_elapsed < 2s, "write cancellation/deadline and close must each finish within two seconds");
-	std::cout << (cancel ? "write cancellation" : "write deadline") << " ms="
+	require(stop != WriteStop::Grace || write_elapsed >= 150ms, "a blocked write must keep its grace period before being cut");
+	std::cout << (stop == WriteStop::Grace ? "write grace cancellation" : cancel ? "write cancellation" : "write deadline") << " ms="
 		<< std::chrono::duration_cast<std::chrono::milliseconds>(write_elapsed).count()
 		<< " close ms=" << std::chrono::duration_cast<std::chrono::milliseconds>(close_elapsed).count() << '\n';
 }
@@ -219,8 +230,9 @@ int main()
 		cancellation_before_connect_is_sticky();
 		handshake_has_a_wall_clock_deadline();
 		cancellation_interrupts_a_stalled_handshake();
-		blocked_publication_write_is_bounded(false);
-		blocked_publication_write_is_bounded(true);
+		blocked_publication_write_is_bounded(WriteStop::Deadline);
+		blocked_publication_write_is_bounded(WriteStop::Cancel);
+		blocked_publication_write_is_bounded(WriteStop::Grace);
 		std::cout << "FFmpeg cancellation tests passed\n";
 		return 0;
 	} catch (const std::exception &error) {

@@ -96,11 +96,28 @@ inline std::int64_t transition_video_duration(const FlvCodecHeaders &headers) {
  if(!units || !scale)unsupported_transition_codec();
  const auto duration=(2000000ULL*units+scale-1)/scale;
  if(duration<4000 || duration>100000)unsupported_transition_codec();
- // HRD/picture-structure extensions require a different timing proof.
- if(b.get(1) || b.get(1) || b.get(1) || !b.get(1))unsupported_transition_codec();
- b.get(1);b.ue();b.ue();b.ue();b.ue();
- const auto reorder=b.ue(),buffer=b.ue();
- if(reorder>buffer || buffer>16 || reorder*duration>transition_max_composition_us)unsupported_transition_codec();
+ // HRD parameters describe buffering only, not frame timing (E.1.2). NVENC
+ // writes NAL HRD and pic_struct for every stream; frames stay progressive.
+ const auto skip_hrd=[&b]{
+  const auto count=b.ue()+1;
+  if(count>32)unsupported_transition_codec();
+  b.get(8);
+  for(std::uint32_t i=0;i<count;++i){b.ue();b.ue();b.get(1);}
+  b.get(20);
+ };
+ const bool nal_hrd=b.get(1);
+ if(nal_hrd)skip_hrd();
+ const bool vcl_hrd=b.get(1);
+ if(vcl_hrd)skip_hrd();
+ if(nal_hrd || vcl_hrd)b.get(1); // low_delay_hrd_flag
+ b.get(1); // pic_struct_present_flag
+ // Without bitstream_restriction (NVENC) the reorder depth is not declared;
+ // validate_transition_packet_timing still bounds every packet's composition.
+ if(b.get(1)) {
+  b.get(1);b.ue();b.ue();b.ue();b.ue();
+  const auto reorder=b.ue(),buffer=b.ue();
+  if(reorder>buffer || buffer>16 || reorder*duration>transition_max_composition_us)unsupported_transition_codec();
+ }
  return static_cast<std::int64_t>(duration);
 }
 } // namespace active_delay

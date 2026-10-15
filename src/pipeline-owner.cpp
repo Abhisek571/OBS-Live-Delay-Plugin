@@ -3,6 +3,12 @@
 #include <algorithm>
 #include <stdexcept>
 namespace active_delay {
+namespace {
+// A loaded GPU (NVENC while gaming) or a capture hitch can pause one encoder
+// for well over a second. Only a stall this long ends the broadcast.
+constexpr auto kCaptureStallLimit=std::chrono::seconds(5);
+constexpr std::int64_t kInterleaveBudgetUs=5000000;
+}
 PipelineOwner::PipelineOwner(DelayController &c,ReleasedPacketDispatcher &d,std::uint64_t e,HoldingFactory h,ConsumerStart s,Finish f,
  Microseconds target, ConsumerReady ready)
  :controller_(c),dispatcher_(d),epoch_(e),holding_factory_(std::move(h)),consumer_start_(std::move(s)),finish_(std::move(f)),
@@ -79,6 +85,10 @@ bool PipelineOwner::enqueue_uninterleaved(EncodedPacket packet,std::uint64_t tok
  if(stopping_ || token!=capture_epoch_)return false;
  {std::scoped_lock failure_lock(failure_->mutex);if(!failure_->error.empty())return false;}
  try{validate_transition_packet_timing(packet);}catch(const std::exception &e){failure(e.what());return false;}
+ if(capture_floor_){
+  if(packet.dts_us<=*capture_floor_)return true;
+  if(packet.kind==PacketKind::Video)capture_floor_.reset();
+ }
  auto &last=packet.kind==PacketKind::Video ? video_input_ : audio_input_;
  if(packet.dts_us<0 || (last && packet.dts_us<=*last)){
   failure("PROGRAMME_TIMESTAMP_INVALID: native encoder clock did not advance");return false;
@@ -90,8 +100,8 @@ bool PipelineOwner::enqueue_uninterleaved(EncodedPacket packet,std::uint64_t tok
  }
  last=packet.dts_us;
  auto &queue=packet.kind==PacketKind::Video ? video_ingress_ : audio_ingress_;
- if(!queue.empty() && packet.dts_us-queue.front().dts_us>2000000){
-  failure("PROGRAMME_INGRESS_STALLED: peer encoder exceeded two-second interleave budget");return false;
+ if(!queue.empty() && packet.dts_us-queue.front().dts_us>kInterleaveBudgetUs){
+  failure("PROGRAMME_INGRESS_STALLED: peer encoder exceeded five-second interleave budget");return false;
  }
  const auto now=std::chrono::steady_clock::now();
  if(packet.kind==PacketKind::Video){last_video_=now;if(packet.keyframe)last_key_=now;}else last_audio_=now;
@@ -139,7 +149,14 @@ bool PipelineOwner::request(TransitionRequest request,std::string &error){
  // it in order; so does Return Live in rewind mode, which keeps the history.
  // Only actions that discard the buffer revoke captured media.
  const bool keeps_buffer=request.action==TransitionAction::SetDelay || (rewind_mode && request.action==TransitionAction::ReturnLive);
- if(!keeps_buffer){++capture_epoch_;clear_capture_locked();}
+ if(!keeps_buffer){
+  // A slower encoder (NVENC) still delivers video older than audio that is
+  // discarded here; drop that late video so both restart at the same time.
+  if(video_input_ || audio_input_)
+   capture_floor_=std::max(video_input_.value_or(std::numeric_limits<std::int64_t>::min()),
+    audio_input_.value_or(std::numeric_limits<std::int64_t>::min()));
+  ++capture_epoch_;clear_capture_locked();
+ }
  wake_.notify_one();return true;
 }
 void PipelineOwner::request_stop() noexcept {
@@ -200,7 +217,7 @@ void PipelineOwner::run() noexcept {
    if(prebuffer_target_!=Microseconds{}){
     std::scoped_lock lock(mutex_);
     const auto now=std::chrono::steady_clock::now();
-    if(now-last_video_>std::chrono::seconds(2) || now-last_audio_>std::chrono::seconds(2))
+    if(now-last_video_>kCaptureStallLimit || now-last_audio_>kCaptureStallLimit)
      throw std::runtime_error("PREBUFFER_CAPTURE_STALLED: programme video or audio stopped");
    }
    if(prebuffer_target_!=Microseconds{} && !coordinator){

@@ -75,7 +75,8 @@ int main(int argc,char **argv){
    obs_module_t *module=nullptr;
    const auto binary=(root/"obs-plugins/64bit/obs-nvenc.dll").string();
    const auto module_data=(root/"data/obs-plugins/obs-nvenc").string();
-   check(obs_open_module(&module,binary.c_str(),module_data.c_str())==MODULE_SUCCESS && obs_init_module(module),"native NVENC module unavailable");
+   // No NVIDIA GPU or driver: skip (77) rather than fail.
+   if(obs_open_module(&module,binary.c_str(),module_data.c_str())!=MODULE_SUCCESS || !obs_init_module(module)){std::cerr<<"SKIP: native NVENC module unavailable\n";return 77;}
   }
   obs_source_info colour_info{};colour_info.id="prebuffer_colour";colour_info.type=OBS_SOURCE_TYPE_INPUT;colour_info.output_flags=OBS_SOURCE_VIDEO;
   colour_info.get_name=[](void *){return "Synthetic prebuffer colour";};
@@ -132,7 +133,9 @@ int main(int argc,char **argv){
    auto *v=obs_video_encoder_create(encoder.c_str(),"Prebuffer synthetic H264",settings,nullptr);
    obs_data_set_int(settings,"bitrate",96);
    auto *a=obs_audio_encoder_create("ffmpeg_aac","Prebuffer synthetic AAC",settings,0,nullptr);
-   obs_data_release(settings);check(v && a,"programme encoders unavailable");
+   obs_data_release(settings);
+   if(!v && encoder=="obs_nvenc_h264_tex"){if(a)obs_encoder_release(a);std::cerr<<"SKIP: NVENC encoder unavailable\n";return 77;}
+   check(v && a,"programme encoders unavailable");
    struct Encoders{obs_encoder_t *v,*a;~Encoders(){obs_encoder_release(v);obs_encoder_release(a);}} enc{v,a};
    obs_encoder_set_video(v,obs_get_video());obs_encoder_set_audio(a,tone ? tone : obs_get_audio());
    settings=obs_data_create();

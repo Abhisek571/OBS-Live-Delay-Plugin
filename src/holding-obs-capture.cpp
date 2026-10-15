@@ -128,6 +128,7 @@ bool ObsHoldingBackend::prepare(HoldingFeed &feed, std::string &error)
 	obs_data_t *settings = obs_data_create();
 	obs_data_set_int(settings, "bitrate", config_.video_bitrate_kbps);
 	obs_data_set_int(settings, "keyint_sec", 1);
+	obs_data_set_string(settings, "preset", config_.video_preset.c_str());
 	video_encoder_ = obs_video_encoder_create(config_.video_encoder_id.c_str(), "Active Delay holding H.264", settings, nullptr);
 	obs_data_release(settings);
 	settings = obs_data_create();

@@ -59,7 +59,7 @@ private:
  std::shared_ptr<ReleasedPacketConsumer> consumer_;
  std::vector<EncodedPacket> packets_;
  std::deque<EncodedPacket> video_ingress_, audio_ingress_;
- std::optional<std::int64_t> video_input_, audio_input_;
+ std::optional<std::int64_t> video_input_, audio_input_, capture_floor_;
  std::size_t ingress_bytes_=0;
  std::size_t packet_bytes_=0;
  bool stopping_=false;

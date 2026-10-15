@@ -31,6 +31,7 @@ FlvCodecHeaders codec_headers()
 }
 
 EncodedPacket keyframe(std::uint8_t value, std::int64_t timestamp);
+EncodedPacket audio_packet(std::int64_t timestamp);
 
 EncodedPacket keyframe(std::uint8_t value)
 {
@@ -475,10 +476,11 @@ void secondary_backpressure_is_isolated_and_shutdown_is_clean()
 	require(wait_for_writes(primary, 4), "primary should deliver the first packet");
 	require(wait_for_writes(other_secondary, 4), "other secondary should deliver the first packet");
 	require(wait_for_sends(secondary, 4), "secondary should be occupied sending its first packet");
-	sender.consume(std::make_shared<const ReleasedPacketBatch>(ReleasedPacketBatch{1, {keyframe(0x51, 2000)}}));
+	// Audio saturation: shedding video cannot relieve it, so the target fails.
+	sender.consume(std::make_shared<const ReleasedPacketBatch>(ReleasedPacketBatch{1, {audio_packet(2000)}}));
 	require(wait_for_writes(primary, 5), "primary should deliver while the secondary is slow");
 	require(wait_for_writes(other_secondary, 5), "other secondary should deliver while the secondary is slow");
-	sender.consume(std::make_shared<const ReleasedPacketBatch>(ReleasedPacketBatch{1, {keyframe(0x52, 3000)}}));
+	sender.consume(std::make_shared<const ReleasedPacketBatch>(ReleasedPacketBatch{1, {audio_packet(3000)}}));
 	require(wait_for_writes(primary, 6, 150ms), "secondary queue saturation must not stall primary delivery");
 	require(wait_for_writes(other_secondary, 6, 150ms),
 		"secondary queue saturation must not stall the other secondary");

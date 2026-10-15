@@ -20,6 +20,7 @@ extern "C" {
 #include <QMessageBox>
 #include <QPushButton>
 #include <QScrollArea>
+#include <QSignalBlocker>
 #include <QStringList>
 #include <QSpinBox>
 #include <QTimer>
@@ -34,6 +35,7 @@ extern "C" {
 namespace active_delay {
 namespace {
 constexpr const char *kMultistreamSection = "ActiveLiveDelayMultistream";
+constexpr const char *kDelaySection = "ActiveLiveDelay";
 
 QString locale_text(const char *key)
 {
@@ -216,6 +218,7 @@ ActiveDelayDock::ActiveDelayDock(std::shared_ptr<ActiveDelaySession> session, QW
 	target_seconds_->setObjectName("ald_delay_seconds");
 	target_seconds_->setRange(1, 600);
 	target_seconds_->setValue(30);
+	target_seconds_->setKeyboardTracking(false);
 
 	auto *guidance = new QLabel(locale_text("Broadcast.Guidance"), this);
 	guidance->setObjectName("ald_broadcast_guidance");
@@ -312,7 +315,10 @@ ActiveDelayDock::ActiveDelayDock(std::shared_ptr<ActiveDelaySession> session, QW
 	layout->addWidget(destination_group, 1);
 
 	refresh_scenes();
+	load_delay_settings();
 	load_multistream_settings();
+	connect(target_seconds_, &QSpinBox::valueChanged, this, &ActiveDelayDock::save_delay_settings);
+	connect(holding_scene_, &QComboBox::activated, this, &ActiveDelayDock::save_delay_settings);
 	connect(start_output_button_, &QPushButton::clicked, this, &ActiveDelayDock::start_delayed_output);
 	connect(arm_buffer_button_, &QPushButton::clicked, this, &ActiveDelayDock::arm_buffer);
 	connect(stop_output_button_, &QPushButton::clicked, this, &ActiveDelayDock::stop_delayed_output);
@@ -351,6 +357,11 @@ void ActiveDelayDock::emergency_dump()
 {
  if (QMessageBox::warning(this, locale_text("Delay.DumpTitle"), locale_text("Delay.DumpConfirm"),
   QMessageBox::Yes | QMessageBox::No, QMessageBox::No) != QMessageBox::Yes) return;
+ emergency_dump_now();
+}
+
+void ActiveDelayDock::emergency_dump_now()
+{
  std::string error;
  if (!session_->request_transition({TransitionAction::EmergencyDump, {}}, error))
   report_operational_error(QString::fromStdString(error), LOG_WARNING);
@@ -474,14 +485,62 @@ void ActiveDelayDock::handle_frontend_event(obs_frontend_event event)
  case OBS_FRONTEND_EVENT_SCENE_LIST_CHANGED:
  case OBS_FRONTEND_EVENT_SCENE_COLLECTION_CHANGED:
  case OBS_FRONTEND_EVENT_SCENE_COLLECTION_RENAMED:
-  refresh_scenes(); break;
+  refresh_scenes(); load_delay_settings(); break;
  case OBS_FRONTEND_EVENT_SCENE_COLLECTION_CHANGING:
  case OBS_FRONTEND_EVENT_SCENE_COLLECTION_CLEANUP:
-  // Source removal cannot fall back to live programme during holding.
-  if (delayed_output_ && obs_output_active(delayed_output_)) obs_output_stop(delayed_output_);
+  // Source removal cannot fall back to live programme during holding. Stop as
+  // a deliberate end, not an unexplained output failure.
+  if (delayed_output_ && obs_output_active(delayed_output_)) {
+   obs_output_stop(delayed_output_);
+   output_flow_state_ = OutputFlowState::Stopping;
+   report_operational_error(dock_error(DiagnosticCode::HoldingSceneInterrupted,
+    "The broadcast ended because the scene collection changed"), LOG_WARNING);
+  }
+  break;
+ case OBS_FRONTEND_EVENT_PROFILE_CHANGED:
+  // Each profile keeps its own delay, holding scene and destinations; never
+  // carry the previous profile's stream keys into this one.
+  load_delay_settings(); load_multistream_settings(); break;
+ case OBS_FRONTEND_EVENT_STREAMING_STARTED:
+  // OBS's own stream would go out undelayed on the same channel.
+  if (broadcast_on_air(session_->pipeline_status())) {
+   QTimer::singleShot(0, this, [] { obs_frontend_streaming_stop(); });
+   report_operational_error(dock_error(DiagnosticCode::OutputControlConflict,
+    "OBS Start Streaming was stopped because it would bypass the delay; this dock is already broadcasting"), LOG_WARNING);
+  }
   break;
  default: break;
  }
+}
+
+// Remembers the last delay length and holding scene in the active profile.
+void ActiveDelayDock::load_delay_settings()
+{
+	auto *profile = obs_frontend_get_profile_config();
+	if (!profile)
+		return;
+	// Loading must not save: a change signal here would write the old holding
+	// scene into this profile before its own value is read.
+	const QSignalBlocker block_seconds(target_seconds_);
+	const QSignalBlocker block_scene(holding_scene_);
+	if (config_has_user_value(profile, kDelaySection, "DelaySeconds"))
+		target_seconds_->setValue(static_cast<int>(config_get_int(profile, kDelaySection, "DelaySeconds")));
+	const auto *scene = config_get_string(profile, kDelaySection, "HoldingScene");
+	const auto index = scene ? holding_scene_->findText(QString::fromUtf8(scene)) : -1;
+	if (index >= 0)
+		holding_scene_->setCurrentIndex(index);
+}
+
+void ActiveDelayDock::save_delay_settings()
+{
+	auto *profile = obs_frontend_get_profile_config();
+	if (!profile)
+		return;
+	config_set_int(profile, kDelaySection, "DelaySeconds", target_seconds_->value());
+	config_set_string(profile, kDelaySection, "HoldingScene", holding_scene_->currentText().toUtf8().constData());
+	if (config_save(profile) != CONFIG_SUCCESS)
+		report_operational_error(dock_error(DiagnosticCode::SettingsSaveFailed,
+			"OBS could not save the Active Live Delay settings to the active profile"), LOG_WARNING);
 }
 
 void ActiveDelayDock::load_multistream_settings()
@@ -641,6 +700,9 @@ void ActiveDelayDock::refresh_target_status()
 			QString::number(destination.sender.reconnect_count) + " | " + locale_text("Multistream.Queue") + " " +
 			QString::number(destination.sender.queued_tags) + " / " + format_bytes(destination.sender.queued_bytes) +
 			" | " + locale_text("Multistream.Sent") + " " + format_bytes(destination.sender.sent_bytes);
+		if (destination.sender.dropped_video_tags != 0)
+			row += " | " + locale_text("Multistream.Dropped") + " " +
+				QString::number(destination.sender.dropped_video_tags);
 		const auto error_code = diagnostic_prefix(destination.sender.error);
 		if (!error_code.isEmpty())
 			row += " | " + locale_text("Multistream.Error") + " " + error_code;
@@ -816,6 +878,15 @@ bool ActiveDelayDock::start_delayed_output_direct(QString &error)
 		obs_data_set_int(audio_settings, "bitrate", static_cast<long long>(audio_bitrate));
 	}
 	obs_data_set_int(video_settings, "keyint_sec", 2);
+	// Reconnect as OBS's own output would (Settings > Advanced > Automatically
+	// Reconnect): 25 retries two seconds apart by default.
+	SenderConfig sender;
+	sender.reconnect_attempts = config_get_bool(profile, "Output", "Reconnect")
+		? static_cast<std::size_t>(std::min<std::uint64_t>(config_get_uint(profile, "Output", "MaxRetries"), 10'000))
+		: 0;
+	sender.reconnect_delay = std::chrono::seconds(
+		std::clamp<std::uint64_t>(config_get_uint(profile, "Output", "RetryDelay"), 1, 60));
+	session_->set_sender_config(sender);
 	if (!validate_multistream_preflight(profile, video_settings, error)) {
 		obs_data_release(video_settings);
 		obs_data_release(audio_settings);

@@ -118,13 +118,13 @@ void delay_change_keeps_in_flight_programme_capture(){
 }
 
 void stale_packets_behind_prepare_cannot_advertise_ready(){
- struct SlowBackend : ReadyBackend { bool prepare(HoldingFeed &f,std::string &e) override { std::this_thread::sleep_for(2200ms);return ReadyBackend::prepare(f,e); } };
+ struct SlowBackend : ReadyBackend { bool prepare(HoldingFeed &f,std::string &e) override { std::this_thread::sleep_for(5200ms);return ReadyBackend::prepare(f,e); } };
  DelayController controller;ReleasedPacketDispatcher dispatcher;
  PipelineOwner owner(controller,dispatcher,1,[]{return std::make_unique<HoldingCapture>(std::make_unique<SlowBackend>());},
   [](FlvCodecHeaders,SenderErrorCallback,std::string &){return std::make_shared<Consumer>();},{},100ms);
  owner.start();owner.headers(programme_test_headers());
  for(int i=0;i<4;++i){owner.enqueue({PacketKind::Video,{1},i*100000LL,i*100000LL,true});owner.enqueue({PacketKind::Audio,{2},i*100000LL,i*100000LL,false});}
- std::this_thread::sleep_for(2300ms);
+ std::this_thread::sleep_for(5300ms);
  const auto status=owner.status();owner.stop();
  require(status.phase==BroadcastPhase::Failed && status.error.find("STALLED")!=std::string::npos,
   "queued old packets behind slow native preparation must not refresh readiness");
@@ -143,7 +143,7 @@ void prebuffer_stall_failure_and_pending_stop_are_off_air(){
   while(owner.status().phase!=BroadcastPhase::Ready && std::chrono::steady_clock::now()<ready_deadline)std::this_thread::sleep_for(1ms);
   require(owner.status().phase==BroadcastPhase::Ready,"failure fixture must first be genuinely Ready");
   if(scenario==1){
-   std::this_thread::sleep_for(2100ms);
+   std::this_thread::sleep_for(5100ms);
    require(owner.status().phase==BroadcastPhase::Failed && !owner.start_broadcast(error) && factories==0,"stalled capture must revoke Ready without opening network");
   }else if(scenario==2){
    owner.failure("PROGRAMME_ENCODER_STOPPED");
@@ -210,7 +210,7 @@ void prebuffer_is_off_air_until_start_then_live(){
  // Keep programme flowing: live output waits for the first keyframe after start.
  for(int i=51;i<=120 && batches==0;++i){feed(i);std::this_thread::sleep_for(5ms);}
  require(batches>0 && controller.status().state==DelayState::Live && controller.status().target_delay==2s,"connected start goes out live and keeps the buffer target");
- std::this_thread::sleep_for(2100ms);
+ std::this_thread::sleep_for(5100ms);
  require(owner.status().phase==BroadcastPhase::Failed && owner.status().error.find("STALLED")!=std::string::npos,
   "broadcast capture stall must fail rather than remain falsely Broadcasting");
  owner.stop();require(dispatcher.consumer_count()==0 && owner.status().stopped,"stop must quiesce consumer");

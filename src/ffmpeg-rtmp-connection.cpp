@@ -105,6 +105,21 @@ void FfmpegRtmpConnection::interrupt() noexcept
 	interrupted_.store(true, std::memory_order_release);
 }
 
+void FfmpegRtmpConnection::interrupt_after(std::chrono::milliseconds grace) noexcept
+{
+	// FFmpeg polls the callback only while an operation is blocked, so a write
+	// that completes in time never sees this. The earliest request wins.
+	const auto at = std::chrono::duration_cast<std::chrono::nanoseconds>(
+		(std::chrono::steady_clock::now() + grace).time_since_epoch()).count();
+	std::int64_t unarmed = 0;
+	cancel_deadline_ns_.compare_exchange_strong(unarmed, at, std::memory_order_acq_rel);
+}
+
+void FfmpegRtmpConnection::clear_interrupt_after() noexcept
+{
+	cancel_deadline_ns_.store(0, std::memory_order_release);
+}
+
 void FfmpegRtmpConnection::close() noexcept
 {
 	if (context_) {
@@ -128,9 +143,10 @@ int FfmpegRtmpConnection::interrupt_callback(void *opaque) noexcept
 	if (connection.interrupted_.load(std::memory_order_acquire))
 		return 1;
 	const auto deadline = connection.deadline_ns_.load(std::memory_order_acquire);
+	const auto cancel = connection.cancel_deadline_ns_.load(std::memory_order_acquire);
 	const auto now = std::chrono::duration_cast<std::chrono::nanoseconds>(
 		std::chrono::steady_clock::now().time_since_epoch()).count();
-	return deadline != 0 && now >= deadline ? 1 : 0;
+	return (deadline != 0 && now >= deadline) || (cancel != 0 && now >= cancel) ? 1 : 0;
 }
 
 std::string FfmpegRtmpConnection::ffmpeg_error(int code)

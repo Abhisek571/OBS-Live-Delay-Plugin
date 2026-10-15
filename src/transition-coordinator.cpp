@@ -5,6 +5,10 @@
 #include <stdexcept>
 namespace active_delay {
 namespace {
+// Longest silence a resume may insert. B-frame reordering at low frame rates
+// alone can open a ~300 ms gap; anything past this means programme audio is
+// actually missing.
+constexpr std::int64_t kMaxResumeBridgeUs=1000000;
 std::int64_t ceil_ms(std::int64_t t) {
  if(t<0 || t>std::numeric_limits<std::int64_t>::max()-999)
   throw std::runtime_error("TRANSITION_TIMESTAMP_OVERFLOW");
@@ -251,9 +255,11 @@ void TransitionCoordinator::publish(Feed feed,std::vector<EncodedPacket> packets
    std::erase_if(packets,[&](const auto &p){return p.kind==PacketKind::Audio && p.pts_us<first_pts;});
    const auto first_audio=std::find_if(packets.begin(),packets.end(),[](const auto &p){return p.kind==PacketKind::Audio;});
    const auto audio_start=first_audio->pts_us+offset_;
-   if(audio_start-audio_end_>250000 || silent_aac_.empty())
-    throw std::runtime_error("TRANSITION_TIMING_UNSUPPORTED: resume bridge cannot be established");
-   for(auto t=ceil_ms(audio_end_);t+duration<=audio_start;t=ceil_ms(t+duration))
+   if(audio_start-audio_end_>kMaxResumeBridgeUs || silent_aac_.empty())
+    throw std::runtime_error("TRANSITION_TIMING_UNSUPPORTED: resume bridge cannot be established (audio gap "+
+     std::to_string((audio_start-audio_end_)/1000)+" ms, video tail "+std::to_string((video_tail_-audio_end_)/1000)+" ms past audio)");
+   // Silence never starts before media already sent: FLV time cannot go back.
+   for(auto t=ceil_ms(std::max(audio_end_,last_output_));t+duration<=audio_start;t=ceil_ms(t+duration))
     bridge.push_back({PacketKind::Audio,silent_aac_,t,t,false,true});
   }
   if(drained) {

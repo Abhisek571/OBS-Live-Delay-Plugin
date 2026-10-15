@@ -13,7 +13,7 @@ BoundedSenderQueue::BoundedSenderQueue(SenderQueueLimits limits) : limits_(limit
 		throw std::invalid_argument("Sender queue limits must be non-zero");
 }
 
-bool BoundedSenderQueue::try_push(std::vector<FlvTag> tags)
+bool BoundedSenderQueue::try_push(std::vector<FlvTag> &&tags)
 {
 	std::size_t added_bytes = 0;
 	for (const auto &tag : tags) {
@@ -29,9 +29,39 @@ bool BoundedSenderQueue::try_push(std::vector<FlvTag> tags)
 		return false;
 	for (auto &tag : tags)
 		tags_.emplace_back(std::move(tag));
+	tags.clear();
 	bytes_ += added_bytes;
 	available_.notify_one();
 	return true;
+}
+
+std::size_t BoundedSenderQueue::drop_video(std::uint64_t &carried_ticket) noexcept
+{
+	std::scoped_lock lock(mutex_);
+	std::size_t dropped = 0;
+	carried_ticket = 0;
+	std::deque<FlvTag> kept;
+	for (auto &tag : tags_) {
+		const bool codec_header = tag.payload.size() > 1 && tag.payload[1] == 0;
+		if (tag.type == FlvTagType::Video && !codec_header) {
+			carried_ticket = std::max(carried_ticket, tag.delivery_ticket);
+			bytes_ -= tag.wire_size();
+			++dropped;
+			continue;
+		}
+		tag.delivery_ticket = std::max(tag.delivery_ticket, std::exchange(carried_ticket, 0));
+		kept.emplace_back(std::move(tag));
+	}
+	tags_.swap(kept);
+	return dropped;
+}
+
+std::optional<std::uint32_t> BoundedSenderQueue::front_timestamp_ms() const
+{
+	std::scoped_lock lock(mutex_);
+	if (tags_.empty())
+		return std::nullopt;
+	return tags_.front().timestamp_ms;
 }
 
 std::optional<FlvTag> BoundedSenderQueue::wait_pop()

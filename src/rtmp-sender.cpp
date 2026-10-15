@@ -3,11 +3,20 @@
 #include "diagnostic-error.hpp"
 #include "flv-muxer.hpp"
 
+#include <algorithm>
 #include <exception>
 #include <stdexcept>
 #include <utility>
 
 namespace active_delay {
+namespace {
+// Above the coordinator's two-second transition burst, so only an uplink that
+// keeps falling behind sheds video.
+constexpr std::uint32_t kCongestionDropMs = 3'000;
+// A transition cuts an in-flight write only if it is still blocked this long;
+// cutting a prompt one would force a reconnect for nothing.
+constexpr std::chrono::milliseconds kTransitionWriteGrace{1'000};
+} // namespace
 
 RtmpSender::RtmpSender(RtmpConnectionFactory factory, SenderConfig config)
 	: factory_(std::move(factory)), config_(config), queue_(config.queue)
@@ -65,6 +74,8 @@ bool RtmpSender::start(RtmpTarget target, std::vector<FlvTag> sequence_headers, 
 		epoch_ = acknowledged_epoch_ = 0;
 		delivered_epoch_ = delivery_ticket_ = 0;
 		published_epoch_ = 0;
+		reset_congestion_locked();
+		dropped_video_tags_.store(0, std::memory_order_relaxed);
 		writing_ = false;
 		transition_cancelled_transport_ = false;
 		resume_after_transition_ = false;
@@ -94,24 +105,41 @@ bool RtmpSender::enqueue_epoch(std::vector<FlvTag> tags, std::uint64_t epoch,
 	std::scoped_lock lock(mutex_);
 	if (epoch < epoch_)
 		return true;
+	if (epoch != epoch_)
+		reset_congestion_locked();
 	epoch_ = epoch;
 	if (!headers.empty()) {
 		sequence_headers_ = headers;
 		++header_revision_;
 	}
-	for (auto &tag : tags)
+	for (auto &tag : tags) {
 		tag.epoch = epoch;
+		enqueued_ticket_ = std::max(enqueued_ticket_, tag.delivery_ticket);
+	}
 	// Disconnected destinations resume at current media, never a stale backlog.
 	// A transport replaced for a transition is the exception: the action's own
 	// drain guard and boundary must survive it, or the coordinator waits forever.
 	const bool transition_resume = state_ == SenderState::Reconnecting && resume_after_transition_;
-	if ((state_ == SenderState::Starting || state_ == SenderState::Reconnecting) && !transition_resume)
+	if ((state_ == SenderState::Starting || state_ == SenderState::Reconnecting) && !transition_resume) {
+		acknowledge_dropped_locked();
 		return true;
+	}
 	if (state_ != SenderState::Running && !transition_resume) {
 		error = diagnostic_error(DiagnosticCode::RtmpSenderStartupFailed,
 			error_.empty() ? "RTMP sender is not running" : error_);
 		return false;
 	}
+	// A slow uplink must not end the broadcast. Like OBS's own RTMP output, shed
+	// queued video and resume at the next keyframe; audio and guards still flow.
+	const auto front = queue_.front_timestamp_ms();
+	if (!drop_video_until_keyframe_ && front && !tags.empty() && tags.back().timestamp_ms >= *front &&
+		tags.back().timestamp_ms - *front >= kCongestionDropMs)
+		shed_queued_video_locked();
+	thin_incoming_video_locked(tags);
+	if (queue_.try_push(std::move(tags)))
+		return true;
+	shed_queued_video_locked();
+	thin_incoming_video_locked(tags);
 	if (!queue_.try_push(std::move(tags))) {
 		error = diagnostic_error(DiagnosticCode::RtmpSenderQueueFull,
 			"RTMP sender queue reached its bounded capacity");
@@ -120,26 +148,74 @@ bool RtmpSender::enqueue_epoch(std::vector<FlvTag> tags, std::uint64_t epoch,
 	return true;
 }
 
+void RtmpSender::acknowledge_dropped_locked() noexcept
+{
+	// Media dropped while reconnecting never reaches this connection, and the
+	// fresh connection restarts the decoders a transition guard protects, so
+	// the coordinator must not wait for it.
+	if (enqueued_ticket_ != 0) {
+		delivered_epoch_ = epoch_;
+		delivery_ticket_ = enqueued_ticket_;
+	}
+	carried_ticket_ = 0;
+	drop_video_until_keyframe_ = false;
+}
+
+void RtmpSender::reset_congestion_locked() noexcept
+{
+	enqueued_ticket_ = carried_ticket_ = 0;
+	drop_video_until_keyframe_ = false;
+}
+
+void RtmpSender::shed_queued_video_locked() noexcept
+{
+	std::uint64_t leftover = 0;
+	dropped_video_tags_.fetch_add(queue_.drop_video(leftover), std::memory_order_relaxed);
+	// Both tickets now trail every kept queued tag; the next kept tag carries them.
+	carried_ticket_ = std::max(carried_ticket_, leftover);
+	drop_video_until_keyframe_ = true;
+}
+
+void RtmpSender::thin_incoming_video_locked(std::vector<FlvTag> &tags) noexcept
+{
+	if (!drop_video_until_keyframe_ && carried_ticket_ == 0)
+		return;
+	std::vector<FlvTag> kept;
+	kept.reserve(tags.size());
+	for (auto &tag : tags) {
+		const bool media_video = tag.type == FlvTagType::Video && !(tag.payload.size() > 1 && tag.payload[1] == 0);
+		if (drop_video_until_keyframe_ && media_video && !tag.keyframe) {
+			carried_ticket_ = std::max(carried_ticket_, tag.delivery_ticket);
+			dropped_video_tags_.fetch_add(1, std::memory_order_relaxed);
+			continue;
+		}
+		if (media_video)
+			drop_video_until_keyframe_ = false;
+		tag.delivery_ticket = std::max(tag.delivery_ticket, std::exchange(carried_ticket_, 0));
+		kept.push_back(std::move(tag));
+	}
+	tags.swap(kept);
+}
+
 void RtmpSender::invalidate_epoch(std::uint64_t epoch) noexcept
 {
-	std::shared_ptr<IRtmpConnection> interrupt;
-	{
-		std::scoped_lock lock(mutex_);
-		if (epoch <= epoch_)
-			return;
-		epoch_ = epoch;
-		queue_.discard_pending();
-		// No source remains selected until the coordinator supplies its boundary.
-		sequence_headers_.clear();
-		++header_revision_;
-		if (writing_) {
-			transition_cancelled_transport_ = true;
-			interrupt = connection_;
-		} else
-			acknowledged_epoch_ = epoch;
-	}
-	if (interrupt)
-		interrupt->interrupt();
+	std::scoped_lock lock(mutex_);
+	if (epoch <= epoch_)
+		return;
+	epoch_ = epoch;
+	reset_congestion_locked();
+	queue_.discard_pending();
+	// No source remains selected until the coordinator supplies its boundary.
+	sequence_headers_.clear();
+	++header_revision_;
+	if (writing_) {
+		// A prompt write just finishes and the epoch check stops stale media
+		// after it; only a write still blocked after the grace period is cut.
+		// Armed under the lock so a write that already finished disarms it.
+		transition_cancelled_transport_ = true;
+		connection_->interrupt_after(kTransitionWriteGrace);
+	} else
+		acknowledged_epoch_ = epoch;
 }
 
 void RtmpSender::request_stop() noexcept
@@ -195,7 +271,8 @@ SenderStatus RtmpSender::status() const
 	const auto queue = queue_.status();
 	std::scoped_lock lock(mutex_);
 	return {state_, queue.tags, queue.bytes, sent_bytes_.load(std::memory_order_relaxed),
-		reconnect_count_.load(std::memory_order_relaxed), error_, acknowledged_epoch_, published_epoch_, delivered_epoch_, delivery_ticket_};
+		reconnect_count_.load(std::memory_order_relaxed), error_, acknowledged_epoch_, published_epoch_, delivered_epoch_, delivery_ticket_,
+		dropped_video_tags_.load(std::memory_order_relaxed)};
 }
 
 void RtmpSender::run() noexcept
@@ -289,15 +366,9 @@ void RtmpSender::run() noexcept
 			if (tag->audio_drain) {
 				if (tag->type != FlvTagType::Audio) { fail("TRANSITION_DRAIN_INVALID"); return; }
 				if (send_tag(*tag, error)) continue;
-				bool superseded;
-				{
-					std::scoped_lock lock(mutex_);
-					superseded = tag->epoch != epoch_;
-				}
-				// A lost guard cannot safely be acknowledged or replayed after reconnect.
-				// A guard that a newer action already superseded is obsolete: only its
-				// interrupted transport needs recovery.
-				if (!superseded) { fail("TRANSITION_DRAIN_DELIVERY_FAILED"); return; }
+				// A guard lost with its connection is never replayed: the reconnect
+				// discards and acknowledges it, and the fresh connection restarts the
+				// decoders it protected. A superseded guard only needs its transport.
 			} else {
 			if (awaiting_keyframe) {
 				if (tag->type != FlvTagType::Video || !tag->keyframe)
@@ -344,7 +415,7 @@ bool RtmpSender::connect_and_prime(std::string &error)
  bool connected = false;
  try { connected = connection_->connect(target_, error); }
  catch (...) { std::scoped_lock lock(mutex_); writing_ = false; acknowledged_epoch_ = epoch_; throw; }
- { std::scoped_lock lock(mutex_); writing_ = false; acknowledged_epoch_ = epoch_; }
+ { std::scoped_lock lock(mutex_); writing_ = false; acknowledged_epoch_ = epoch_; if (connected) keep_transport_locked(); }
  if (!connected) return false;
  const auto file_header = make_flv_header();
  if (!send_bytes(file_header, {}, error)) { close_transport(); return false; }
@@ -395,10 +466,22 @@ bool RtmpSender::send_bytes(std::span<const std::uint8_t> bytes, std::optional<s
 		std::scoped_lock lock(mutex_);
 		writing_ = false;
 		acknowledged_epoch_ = epoch_;
+		if (sent)
+			keep_transport_locked();
 	}
 	if (sent)
 		sent_bytes_.fetch_add(bytes.size(), std::memory_order_relaxed);
 	return sent;
+}
+
+void RtmpSender::keep_transport_locked() noexcept
+{
+	// The I/O a transition caught finished within its grace period, so this
+	// connection is intact: keep it instead of reconnecting.
+	if (transition_cancelled_transport_) {
+		transition_cancelled_transport_ = false;
+		connection_->clear_interrupt_after();
+	}
 }
 
 void RtmpSender::close_transport() noexcept
@@ -437,8 +520,10 @@ bool RtmpSender::replace_cancelled_transport(std::string &error)
 void RtmpSender::end_transition_resume(bool discard_pending) noexcept
 {
 	std::scoped_lock lock(mutex_);
-	if (resume_after_transition_ && discard_pending)
+	if (resume_after_transition_ && discard_pending) {
 		queue_.discard_pending();
+		acknowledge_dropped_locked();
+	}
 	resume_after_transition_ = false;
 }
 
@@ -453,8 +538,10 @@ bool RtmpSender::reconnect(std::string &error)
 		delivered_epoch_ = delivery_ticket_ = 0;
 		// The transition already discarded older epochs; keep its new media.
 		resume_after_transition_ = transition_cancelled_transport_;
-		if (!resume_after_transition_)
+		if (!resume_after_transition_) {
 			queue_.discard_pending();
+			acknowledge_dropped_locked();
+		}
 	}
 	close_transport();
 	transition_cancelled = take_transport_cancellation();

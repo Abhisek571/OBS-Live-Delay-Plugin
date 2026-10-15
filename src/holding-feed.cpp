@@ -63,7 +63,7 @@ void HoldingFeed::ingest(EncodedPacket packet)
 	const auto minimum = minimum_dts_ ? std::min(*minimum_dts_, packet.dts_us) : packet.dts_us;
 	const auto maximum = maximum_dts_ ? std::max(*maximum_dts_, packet.dts_us) : packet.dts_us;
 	if (static_cast<std::uint64_t>(maximum) - static_cast<std::uint64_t>(minimum) > queue_duration_us) {
-		fail_locked("HOLDING_QUEUE_LIMIT: holding media exceeded two seconds");
+		fail_locked("HOLDING_QUEUE_LIMIT: holding media exceeded five seconds");
 		return;
 	}
 	minimum_dts_ = minimum; maximum_dts_ = maximum;
