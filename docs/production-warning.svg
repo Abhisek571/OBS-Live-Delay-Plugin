@@ -1,11 +1,11 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 157" role="img" aria-labelledby="title description">
-  <title id="title">Alpha: v0.2.0-alpha1 — read the entire README before use</title>
-  <desc id="description">One basic Twitch test passed with x264; YouTube and Kick untested. v0.2.0-alpha1 is x264 only; NVIDIA NVENC support is on main for the next alpha. Use the Active Live Delay dock, not OBS's normal Start Streaming button.</desc>
+  <title id="title">Alpha: v0.2.0-alpha2 — read the entire README before use</title>
+  <desc id="description">One basic Twitch test passed with x264; NVENC on Twitch, YouTube and Kick are untested. NVIDIA NVENC is supported from v0.2.0-alpha2, tested on local servers only. Use the Active Live Delay dock, not OBS's normal Start Streaming button.</desc>
   <rect x="3" y="3" width="1194" height="151" rx="12" fill="none" stroke="#d73a4a" stroke-width="6"/>
   <g fill="#d73a4a" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-weight="700">
-    <text x="600" y="32" font-size="26">ALPHA: v0.2.0-alpha1 — READ THE ENTIRE README BEFORE USE</text>
-    <text x="600" y="59" font-size="17">ONE BASIC TWITCH TEST PASSED (x264) — YOUTUBE AND KICK UNTESTED</text>
-    <text x="600" y="84" font-size="17">v0.2.0-alpha1 IS x264 ONLY — NVIDIA NVENC SUPPORT IS ON MAIN FOR THE NEXT ALPHA</text>
+    <text x="600" y="32" font-size="26">ALPHA: v0.2.0-alpha2 — READ THE ENTIRE README BEFORE USE</text>
+    <text x="600" y="59" font-size="17">ONE BASIC TWITCH TEST PASSED (x264) — NVENC ON TWITCH, YOUTUBE AND KICK UNTESTED</text>
+    <text x="600" y="84" font-size="17">NVIDIA NVENC IS NOW SUPPORTED — TESTED ON LOCAL SERVERS ONLY</text>
     <text x="600" y="109" font-size="17">TEST WITH A NON-CRITICAL STREAM FIRST</text>
     <text x="600" y="134" font-size="17">Use the Active Live Delay dock, not OBS Start Streaming.</text>
   </g>
