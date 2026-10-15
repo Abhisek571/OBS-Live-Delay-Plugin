@@ -40,7 +40,7 @@ jobs:
         shell: pwsh
         run: |
           git clone --depth 1 --branch $env:OBS_VERSION --recurse-submodules --shallow-submodules https://github.com/obsproject/obs-studio.git obs-studio
-          cmake -S obs-studio --preset windows-x64 -G "Visual Studio 17 2022" `
+          cmake -S obs-studio --preset windows-x64 `
             -DENABLE_BROWSER=OFF -DENABLE_WEBSOCKET=OFF -DENABLE_SCRIPTING=OFF -DENABLE_AJA=OFF `
             -DENABLE_DECKLINK=OFF -DENABLE_VLC=OFF -DENABLE_WEBRTC=OFF -DENABLE_TEST_INPUT=OFF
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
@@ -54,7 +54,7 @@ jobs:
           $deps = (Get-ChildItem "$obs/.deps" -Directory -Filter 'obs-deps-20*-x64').FullName.Replace('\', '/')
           $qt = (Get-ChildItem "$obs/.deps" -Directory -Filter 'obs-deps-qt6-*-x64').FullName.Replace('\', '/')
           $prefix = "$obs/build_x64;$obs/build_x64/frontend/api;$obs/build_x64/deps/w32-pthreads;$deps;$qt"
-          cmake -S plugin -B build -G "Visual Studio 17 2022" -A x64 "-DCMAKE_PREFIX_PATH=$prefix" "-DCMAKE_MODULE_PATH=$obs/cmake/finders" -DACTIVE_DELAY_BUILD_TESTS=OFF
+          cmake -S plugin -B build -G "Visual Studio 18 2026" -A x64 "-DCMAKE_PREFIX_PATH=$prefix" "-DCMAKE_MODULE_PATH=$obs/cmake/finders" -DACTIVE_DELAY_BUILD_TESTS=OFF
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           cmake --build build --config Release --target obs-active-live-delay
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
