@@ -1,0 +1,115 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  pull_request:
+    paths:
+      - '.github/workflows/release.yml'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing tag to build and publish (for example v0.2.0-alpha2)'
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  OBS_VERSION: '32.2.1'
+
+jobs:
+  release:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+          path: plugin
+
+      - name: Restore OBS SDK
+        id: obs-cache
+        uses: actions/cache@v4
+        with:
+          path: obs-studio
+          key: obs-sdk-${{ env.OBS_VERSION }}-windows-x64-v1
+
+      - name: Build OBS SDK
+        if: steps.obs-cache.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          git clone --depth 1 --branch $env:OBS_VERSION --recurse-submodules --shallow-submodules https://github.com/obsproject/obs-studio.git obs-studio
+          cmake -S obs-studio --preset windows-x64 `
+            -DENABLE_BROWSER=OFF -DENABLE_WEBSOCKET=OFF -DENABLE_SCRIPTING=OFF -DENABLE_AJA=OFF `
+            -DENABLE_DECKLINK=OFF -DENABLE_VLC=OFF -DENABLE_WEBRTC=OFF -DENABLE_TEST_INPUT=OFF
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          cmake --build obs-studio/build_x64 --config Release --target libobs obs-frontend-api w32-pthreads
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+
+      - name: Build plugin
+        shell: pwsh
+        run: |
+          $obs = (Resolve-Path obs-studio).Path.Replace('\', '/')
+          $deps = (Get-ChildItem "$obs/.deps" -Directory -Filter 'obs-deps-20*-x64').FullName.Replace('\', '/')
+          $qt = (Get-ChildItem "$obs/.deps" -Directory -Filter 'obs-deps-qt6-*-x64').FullName.Replace('\', '/')
+          $prefix = "$obs/build_x64;$obs/build_x64/frontend/api;$obs/build_x64/deps/w32-pthreads;$deps;$qt"
+          cmake -S plugin -B build -G "Visual Studio 18 2026" -A x64 "-DCMAKE_PREFIX_PATH=$prefix" "-DCMAKE_MODULE_PATH=$obs/cmake/finders" -DACTIVE_DELAY_BUILD_TESTS=OFF
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          cmake --build build --config Release --target obs-active-live-delay
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+
+      - name: Package
+        id: package
+        shell: pwsh
+        run: |
+          $tag = if ('${{ github.event_name }}' -eq 'workflow_dispatch') { '${{ inputs.tag }}' }
+                 elseif ('${{ github.ref_type }}' -eq 'tag') { '${{ github.ref_name }}' }
+                 else { 'v0.0.0-check' }
+          $name = "obs-active-live-delay-$tag-windows-x64"
+          cmake --install build --config Release --prefix "package/$name"
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          $dll = "package/$name/obs-plugins/64bit/obs-active-live-delay.dll"
+          foreach ($file in $dll, "package/$name/data/obs-plugins/obs-active-live-delay/locale/en-US.ini", "package/$name/LICENSE") {
+            if (-not (Test-Path $file)) { throw "missing $file" }
+          }
+          Compress-Archive -Path "package/$name/*" -DestinationPath "$name.zip"
+          $zipHash = (Get-FileHash "$name.zip" -Algorithm SHA256).Hash
+          $dllHash = (Get-FileHash $dll -Algorithm SHA256).Hash
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+          "zip=$name.zip" >> $env:GITHUB_OUTPUT
+          # Release notes: the CHANGELOG section for this tag, then the checksums.
+          $notes = [System.Collections.Generic.List[string]]::new()
+          $inSection = $false
+          foreach ($line in Get-Content plugin/CHANGELOG.md) {
+            if ($line -match '^## ') { if ($inSection) { break }; $inSection = $line -eq "## $tag"; continue }
+            if ($inSection) { $notes.Add($line) }
+          }
+          if ('${{ github.ref_type }}' -eq 'tag' -and $notes.Count -eq 0) { throw "CHANGELOG.md has no '## $tag' section" }
+          $notes.AddRange([string[]]@('', 'Install: close OBS, extract the zip into the OBS installation folder (normally `C:\Program Files\obs-studio`), then start OBS and open **Docks -> Active Live Delay**. Read the README before use.', '', "Built against OBS $env:OBS_VERSION.", '', "ZIP SHA-256: ``$zipHash``", '', "DLL SHA-256: ``$dllHash``"))
+          $notes | Set-Content -Encoding utf8 release-notes.md
+          Get-Content release-notes.md
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.package.outputs.zip }}
+          path: |
+            ${{ steps.package.outputs.zip }}
+            release-notes.md
+
+      - name: Publish release
+        if: github.event_name != 'pull_request'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = '${{ steps.package.outputs.tag }}'
+          $flags = @('--title', $tag, '--notes-file', 'release-notes.md', '--verify-tag')
+          if ($tag -match '-') { $flags += '--prerelease' }
+          gh release view $tag --repo '${{ github.repository }}' *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $tag '${{ steps.package.outputs.zip }}' --clobber --repo '${{ github.repository }}'
+          } else {
+            gh release create $tag '${{ steps.package.outputs.zip }}' @flags --repo '${{ github.repository }}'
+          }
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }

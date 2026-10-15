@@ -5,7 +5,11 @@ Release labels use `v0.1.NN-betaNN` for beta `NN`; for example, Beta 5 uses
 `v0.1.53-beta53`. Alpha releases of a new line use `vX.Y.Z-alphaN`, starting
 with `v0.2.0-alpha1`.
 
-## Unreleased
+## v0.2.0-alpha2
+
+Second alpha. Tested on local RTMP servers, including a full run of every dock
+action in OBS 32.2.2 with NVENC. One basic Twitch test has passed with x264;
+NVENC on Twitch, YouTube and Kick are untested.
 
 - NVIDIA NVENC H.264 is accepted (tested on local RTMP servers; platform
   acceptance pending).
@@ -33,6 +37,7 @@ with `v0.2.0-alpha1`.
   automatically, since it would bypass the delay.
 - The Primary destination row shows live status in single-destination mode.
 - The holding encoder uses the x264 `superfast` preset to save CPU.
+- Release builds are now made and published by a GitHub Actions workflow.
 
 ## v0.2.0-alpha1
 

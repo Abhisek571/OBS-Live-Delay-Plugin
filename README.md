@@ -1,10 +1,10 @@
 # OBS Live Delay Plugin
 
 <p align="center">
-  <img src="docs/production-warning.svg" width="100%" alt="Alpha: v0.2.0-alpha1 — read the entire README before use. One basic Twitch test passed with x264; YouTube and Kick untested. v0.2.0-alpha1 is x264 only; NVIDIA NVENC support is on main for the next alpha.">
+  <img src="docs/production-warning.svg" width="100%" alt="Alpha: v0.2.0-alpha2 — read the entire README before use. One basic Twitch test passed with x264; NVENC on Twitch, YouTube and Kick are untested. NVIDIA NVENC is supported from v0.2.0-alpha2, tested on local servers only.">
 </p>
 
-## v0.2.0-alpha1
+## v0.2.0-alpha2
 
 OBS Live Delay Plugin adds a "panic button" delay to a live stream from an OBS
 dock. You broadcast live, and the plugin always keeps the last few seconds in a
@@ -14,28 +14,25 @@ up to three destinations.
 
 It is alpha software: use a non-critical test stream before relying on it.
 
-### New in v0.2.0-alpha1
+### New in v0.2.0-alpha2
 
-- The broadcast now starts **live**, not delayed. The delay is always ready in
-  the background instead of having to build up first.
-- **Start Delay** is instant and shows no holding scene; **Return Live** keeps
-  the buffer so you can delay again straight away.
-- New **Emergency Dump (Rebuild Delay)** button.
-- The dock shows **OFF AIR** whenever nothing is being broadcast.
+- **NVIDIA NVENC** H.264 is supported as well as x264.
+- A slow upload no longer ends the broadcast: video is dropped until the next
+  keyframe while audio continues.
+- Reconnects follow OBS **Settings → Advanced → Automatically Reconnect**.
+- Start Delay, Return Live and Emergency Dump no longer cause an occasional
+  reconnect when pressed mid-send.
+- New **Emergency Dump** hotkey, and hotkey bindings are kept after restarting OBS.
+- The dock remembers the delay length and holding scene per profile.
 
 See the [changelog](CHANGELOG.md) for the full list.
-
-Changes made since v0.2.0-alpha1, including NVIDIA NVENC support, are on the
-main branch and listed under **Unreleased** in the changelog. They will ship in
-the next alpha.
 
 ## Requirements
 
 - OBS Studio 32.2 on Windows x64 (tested with 32.2.1 and 32.2.2)
 - OBS **Settings → Output → Output Mode: Simple**
-- An H.264 streaming encoder: **x264**, or **NVIDIA NVENC** from the next
-  alpha onward. v0.2.0-alpha1 refuses NVENC at **Arm Buffer** with
-  `TRANSITION_CODEC_UNSUPPORTED`. NVENC has been tested on an RTX 5070 in
+- An H.264 streaming encoder: **x264** or **NVIDIA NVENC** (v0.2.0-alpha1
+  accepted x264 only). NVENC has been tested on an RTX 5070 in
   OBS 32.2.2 against a local server. QSV and AMD H.264 are untested.
 - AAC streaming audio
 - One primary streaming service configured normally in OBS
@@ -46,7 +43,7 @@ the next alpha.
 ## Install
 
 1. Close OBS completely.
-2. Download `obs-active-live-delay-v0.2.0-alpha1-windows-x64.zip` from the release.
+2. Download `obs-active-live-delay-v0.2.0-alpha2-windows-x64.zip` from the release.
 3. Extract the ZIP into the OBS installation directory, normally:
 
    ```text
@@ -157,7 +154,7 @@ Twitch, YouTube, and Kick combined runtime acceptance remains pending.
 ## Before you use it
 
 - OBS's normal **Start Streaming** button and status bar do not own or represent the plugin output.
-- Direct start currently requires OBS **Simple Output** mode with x264 (or, after v0.2.0-alpha1, NVENC) H.264 video and AAC audio.
+- Direct start currently requires OBS **Simple Output** mode with x264 or NVENC H.264 video and AAC audio.
 - The holding scene runs on its own x264 encoder for the whole session, so expect extra CPU use.
 - Do not try to switch an already-running normal OBS stream into the plugin; that workflow is blocked because Twitch ended the broadcast during handoff.
 - This is an alpha. Test with a non-critical stream before relying on it.
