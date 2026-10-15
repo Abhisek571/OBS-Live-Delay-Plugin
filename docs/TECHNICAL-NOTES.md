@@ -39,10 +39,13 @@ Media path:
   bridge. Pacing stops once the resume boundary is delivered.
 - `transition-codec.hpp` admits only codecs whose switch timing it can prove:
   progressive AVC with VUI timing and bounded reordering, and 1024-sample LC
-  AAC at 44.1/48 kHz. NVENC headers currently fail this check.
+  AAC at 44.1/48 kHz. NVENC's NAL HRD and `pic_struct` fields are skipped, and
+  a stream without `bitstream_restriction` is admitted because every packet's
+  composition offset is still bounded at 250 ms.
 - H.264 Annex-B packets are converted to FLV-compatible length-prefixed AVC.
-- Sender reconnects realign on a video keyframe. A reconnect caused by a
-  transition replaces the cancelled transport and keeps the new epoch's media.
+- Sender reconnects realign on a video keyframe. A transition lets an
+  in-flight send finish; only a send still blocked after one second is cut,
+  which replaces the transport and keeps the new epoch's media.
 
 ## Current support boundary
 

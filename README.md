@@ -1,7 +1,7 @@
 # OBS Live Delay Plugin
 
 <p align="center">
-  <img src="docs/production-warning.svg" width="100%" alt="Alpha: v0.2.0-alpha1 — read the entire README before use. Not yet tested on live platforms. x264 only; NVIDIA NVENC is not supported yet.">
+  <img src="docs/production-warning.svg" width="100%" alt="Alpha: v0.2.0-alpha1 — read the entire README before use. One basic Twitch test passed with x264; YouTube and Kick untested. v0.2.0-alpha1 is x264 only; NVIDIA NVENC support is on main for the next alpha.">
 </p>
 
 ## v0.2.0-alpha1
@@ -25,18 +25,23 @@ It is alpha software: use a non-critical test stream before relying on it.
 
 See the [changelog](CHANGELOG.md) for the full list.
 
+Changes made since v0.2.0-alpha1, including NVIDIA NVENC support, are on the
+main branch and listed under **Unreleased** in the changelog. They will ship in
+the next alpha.
+
 ## Requirements
 
-- OBS Studio 32.2.1 on Windows x64
+- OBS Studio 32.2 on Windows x64 (tested with 32.2.1 and 32.2.2)
 - OBS **Settings → Output → Output Mode: Simple**
-- The **x264** (software) H.264 streaming encoder. NVENC H.264 is currently
-  refused at **Arm Buffer** with `TRANSITION_CODEC_UNSUPPORTED`, because its
-  stream headers do not yet pass the safe-switch timing check. QSV and AMD
-  H.264 are untested.
+- An H.264 streaming encoder: **x264**, or **NVIDIA NVENC** from the next
+  alpha onward. v0.2.0-alpha1 refuses NVENC at **Arm Buffer** with
+  `TRANSITION_CODEC_UNSUPPORTED`. NVENC has been tested on an RTX 5070 in
+  OBS 32.2.2 against a local server. QSV and AMD H.264 are untested.
 - AAC streaming audio
 - One primary streaming service configured normally in OBS
-- This alpha has been tested against local RTMP servers only. It has not yet
-  been tested on Twitch, YouTube, Kick, or any other live platform.
+- Tested against local RTMP servers, including a full run of every dock action
+  in OBS 32.2.2 with NVENC. One basic Twitch test has passed with x264. NVENC
+  on Twitch is not yet tested, and YouTube and Kick are untested.
 
 ## Install
 
@@ -152,12 +157,12 @@ Twitch, YouTube, and Kick combined runtime acceptance remains pending.
 ## Before you use it
 
 - OBS's normal **Start Streaming** button and status bar do not own or represent the plugin output.
-- Direct start currently requires OBS **Simple Output** mode with x264 H.264 video and AAC audio.
+- Direct start currently requires OBS **Simple Output** mode with x264 (or, after v0.2.0-alpha1, NVENC) H.264 video and AAC audio.
 - The holding scene runs on its own x264 encoder for the whole session, so expect extra CPU use.
 - Do not try to switch an already-running normal OBS stream into the plugin; that workflow is blocked because Twitch ended the broadcast during handoff.
 - This is an alpha. Test with a non-critical stream before relying on it.
-- This version has not been tested on any live platform yet. Do not infer
-  support for Twitch or any other RTMP service.
+- Live platform testing so far is one basic Twitch test with x264. Do not infer
+  support for any other RTMP service.
 - Return Live, reconnect behaviour, long sessions, and clean shutdown need broader testing.
 - Native Multistream is experimental. It has been tested with three local RTMP
   servers only; Twitch, YouTube, and Kick together are untested.
