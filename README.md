@@ -85,8 +85,9 @@ your OBS programme scene or recording.
 The delay length is locked once armed. To change it, use **Stop / Disarm**,
 choose the new length, and arm again.
 
-**Start Delay** and **Return Live** can also be bound to keys in OBS
-**Settings → Hotkeys** (search for "Active Live Delay").
+**Start Delay**, **Return Live** and **Emergency Dump** can also be bound to keys
+in OBS **Settings → Hotkeys** (search for "Active Live Delay"). The Emergency
+Dump hotkey acts at once, without the confirmation the button asks for.
 
 ### Reading the dock status
 
@@ -133,8 +134,8 @@ requirements.
 
 The primary OBS service owns the output state. A failed or slow secondary is
 shown as `FAILED` on its destination row but must not stop the primary or the
-other secondary. Rows show connection state, reconnect count, queue use, error
-code, and sent bytes. Destination editing is disabled while output is active.
+other secondary. Rows show connection state, reconnect count, queue use,
+dropped video, error code, and sent bytes. Destination editing is disabled while output is active.
 Twitch, YouTube, and Kick combined runtime acceptance remains pending.
 
 ## Button reference
@@ -162,6 +163,24 @@ Twitch, YouTube, and Kick combined runtime acceptance remains pending.
   servers only; Twitch, YouTube, and Kick together are untested.
 - If the dock reports an `ALD-E####` error during testing, record the code and
   safe message with the OBS log. See the [error-code guide](docs/ERROR-CODES.md).
+
+## Known limits
+
+- Video must be progressive 8-bit 4:2:0 H.264. Audio must be AAC-LC, mono or
+  stereo, at 44.1 or 48 kHz; 5.1 audio is refused.
+- Start Delay and Return Live switch at a keyframe, so the picture can pause for
+  up to one keyframe interval (two seconds).
+- After an Emergency Dump the holding scene appears after about a second.
+- Stop / Disarm ends the broadcast at once; buffered seconds are not played out.
+- Lost connections are retried as set in OBS **Settings → Advanced →
+  Automatically Reconnect**. Viewers see nothing while it reconnects, and the
+  stream resumes at the current (delayed) programme.
+- If the upload falls about three seconds behind, video is dropped until the
+  next keyframe while audio continues, as OBS does. Destination rows show a
+  `dropped video` count.
+- OBS **Start Streaming** pressed while the dock is broadcasting is stopped
+  automatically, because it would bypass the delay.
+- Switching scene collection while armed ends the broadcast.
 
 ## For contributors
 

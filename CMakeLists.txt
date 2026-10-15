@@ -148,6 +148,10 @@ if (ACTIVE_DELAY_BUILD_TESTS)
     add_executable(active-delay-transition-tests tests/transition-coordinator-tests.cpp)
     target_link_libraries(active-delay-transition-tests PRIVATE active-delay-core)
     add_test(NAME active-delay-transition-tests COMMAND active-delay-transition-tests)
+    add_executable(active-delay-nvenc-admission-tests tests/transition-nvenc-admission-tests.cpp)
+    target_include_directories(active-delay-nvenc-admission-tests PRIVATE src)
+    target_link_libraries(active-delay-nvenc-admission-tests PRIVATE active-delay-core)
+    add_test(NAME active-delay-nvenc-admission-tests COMMAND active-delay-nvenc-admission-tests)
     add_executable(active-delay-holding-tests tests/holding-feed-tests.cpp)
     target_link_libraries(active-delay-holding-tests PRIVATE active-delay-core)
     add_test(NAME active-delay-holding-tests COMMAND active-delay-holding-tests)
@@ -273,15 +277,24 @@ if (ACTIVE_DELAY_BUILD_TESTS)
                 set(PREBUFFER_MODES single multi guard-single guard-multi)
             endif()
             foreach(PREBUFFER_MODE ${PREBUFFER_MODES})
-                add_test(NAME active-delay-prebuffer-${PREBUFFER_MODE}-obs-tests COMMAND "${SPLICE_TEST_PYTHON}"
+              # NVENC runs are skipped (exit 77) on machines without an NVIDIA GPU.
+              foreach(PREBUFFER_ENCODER obs_x264 obs_nvenc_h264_tex)
+                set(PREBUFFER_TEST active-delay-prebuffer-${PREBUFFER_MODE}-obs-tests)
+                if (PREBUFFER_ENCODER STREQUAL "obs_nvenc_h264_tex")
+                    set(PREBUFFER_TEST active-delay-prebuffer-${PREBUFFER_MODE}-nvenc-obs-tests)
+                endif()
+                add_test(NAME ${PREBUFFER_TEST} COMMAND "${SPLICE_TEST_PYTHON}"
                     "${CMAKE_CURRENT_SOURCE_DIR}/tests/prebuffer-obs-validation.py"
                     "${SPLICE_TEST_FFMPEG}" "$<TARGET_FILE:active-delay-prebuffer-obs-tests>"
-                    "$ENV{ProgramFiles}/obs-studio" "${CMAKE_CURRENT_BINARY_DIR}/prebuffer-${PREBUFFER_MODE}-evidence" ${PREBUFFER_MODE})
-                set_property(TEST active-delay-prebuffer-${PREBUFFER_MODE}-obs-tests PROPERTY TIMEOUT 30)
-                set_property(TEST active-delay-prebuffer-${PREBUFFER_MODE}-obs-tests PROPERTY ENVIRONMENT_MODIFICATION
+                    "$ENV{ProgramFiles}/obs-studio" "${CMAKE_CURRENT_BINARY_DIR}/${PREBUFFER_TEST}-evidence" ${PREBUFFER_MODE})
+                set_property(TEST ${PREBUFFER_TEST} PROPERTY TIMEOUT 30)
+                set_property(TEST ${PREBUFFER_TEST} PROPERTY SKIP_RETURN_CODE 77)
+                set_property(TEST ${PREBUFFER_TEST} PROPERTY ENVIRONMENT "ALD_NATIVE_TEST_ENCODER=${PREBUFFER_ENCODER}")
+                set_property(TEST ${PREBUFFER_TEST} PROPERTY ENVIRONMENT_MODIFICATION
                     "PATH=path_list_prepend:$<TARGET_FILE_DIR:OBS::libobs>"
                     "PATH=path_list_prepend:${OBS_BUILD_DIR}/rundir/$<CONFIG>/bin/64bit"
                     "PATH=path_list_prepend:${FFMPEG_PREFIX_DIR}/bin")
+              endforeach()
             endforeach()
             add_executable(active-delay-ffmpeg-tests
                 tests/ffmpeg-rtmp-connection-tests.cpp

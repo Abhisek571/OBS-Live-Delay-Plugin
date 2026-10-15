@@ -110,12 +110,13 @@ bool output_start(void *data) {
    target.username=connect_info(service,OBS_SERVICE_CONNECT_INFO_USERNAME);
    target.password=connect_info(service,OBS_SERVICE_CONNECT_INFO_PASSWORD);
    std::shared_ptr<ReleasedPacketConsumer> consumer;
+   const auto sender_config=context->session->sender_config();
    if(mode==OperatingMode::NativeMultistream){
-    auto multi=std::make_shared<MultiTargetSender>([]{return std::make_unique<FfmpegRtmpConnection>();},SenderConfig{});
+    auto multi=std::make_shared<MultiTargetSender>([]{return std::make_unique<FfmpegRtmpConnection>();},sender_config);
     if(!multi->start(target,"Primary OBS service",context->session->multistream.snapshot(),std::move(headers),std::move(failure),error))return {};
     consumer=multi;
    }else{
-    auto single=std::make_shared<NetworkPacketConsumer>([]{return std::make_unique<FfmpegRtmpConnection>();},SenderConfig{});
+    auto single=std::make_shared<NetworkPacketConsumer>([]{return std::make_unique<FfmpegRtmpConnection>();},sender_config);
     if(!single->start(target,std::move(headers),std::move(failure),error))return {};
     consumer=single;
    }

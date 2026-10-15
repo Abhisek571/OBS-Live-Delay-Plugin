@@ -44,9 +44,9 @@ int main()
 		feed.begin(start);
 		feed.set_headers({{1}, {2}});
 		feed.ingest({PacketKind::Video, {1}, 0, 0, true});
-		feed.ingest({PacketKind::Audio, {2}, 2'000'000, 2'000'000, false});
+		feed.ingest({PacketKind::Audio, {2}, HoldingFeed::queue_duration_us, HoldingFeed::queue_duration_us, false});
 		require(feed.status().state == HoldingState::Ready, "exact duration bound should be allowed");
-		feed.ingest({PacketKind::Video, {3}, 2'000'001, 2'000'001, true});
+		feed.ingest({PacketKind::Video, {3}, HoldingFeed::queue_duration_us + 1, HoldingFeed::queue_duration_us + 1, true});
 		require(feed.status().state == HoldingState::Failed, "compressed duration exhaustion did not fail closed");
 		feed.begin(start);
 		feed.check_deadline(start + std::chrono::seconds(5));

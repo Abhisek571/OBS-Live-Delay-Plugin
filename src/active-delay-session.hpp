@@ -141,16 +141,26 @@ public:
 		std::shared_ptr<PipelineOwner> owner;
 		{ std::scoped_lock lock(consumers.mutex); owner = pipeline_.lock(); }
 		if (!owner) return;
-		if (auto multi = std::dynamic_pointer_cast<MultiTargetSender>(owner->consumer_snapshot()))
+		const auto consumer = owner->consumer_snapshot();
+		if (auto multi = std::dynamic_pointer_cast<MultiTargetSender>(consumer))
 			multistream.set_status(multi->status());
+		else if (auto single = std::dynamic_pointer_cast<NetworkPacketConsumer>(consumer)) {
+			// One row, so the primary card shows reconnects and dropped video too.
+			const auto sender = single->status();
+			multistream.set_status({{{"primary", "Primary OBS service", true, sender}}, sender.state, sender.sent_bytes});
+		}
 	}
 	std::string holding_scene() const { std::scoped_lock lock(consumers.mutex); return holding_scene_; }
+	// Follows OBS Settings > Advanced > Automatically Reconnect, read at arm time.
+	void set_sender_config(SenderConfig config) { std::scoped_lock lock(consumers.mutex); sender_config_ = config; }
+	SenderConfig sender_config() const { std::scoped_lock lock(consumers.mutex); return sender_config_; }
 	ConsumerLifecycleResponsibility consumers;
 	MultistreamResponsibility multistream;
 private:
 	std::weak_ptr<PipelineOwner> pipeline_;
 	Microseconds prebuffer_target_{};
 	std::string holding_scene_;
+	SenderConfig sender_config_;
 };
 
 } // namespace active_delay

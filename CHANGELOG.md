@@ -5,6 +5,32 @@ Release labels use `v0.1.NN-betaNN` for beta `NN`; for example, Beta 5 uses
 `v0.1.53-beta53`. Alpha releases of a new line use `vX.Y.Z-alphaN`, starting
 with `v0.2.0-alpha1`.
 
+## Unreleased
+
+- NVIDIA NVENC H.264 is accepted (tested on local RTMP servers; platform
+  acceptance pending).
+- The dock remembers the delay length and holding scene per profile.
+- Reconnects follow OBS **Settings → Advanced → Automatically Reconnect**
+  (default 25 retries, 2 s apart) instead of three quick retries.
+- A slow upload no longer ends the broadcast: once delivery falls about three
+  seconds behind, video is dropped until the next keyframe while audio
+  continues. Destination rows show a `dropped video` count.
+- An Emergency Dump, or a network drop in the middle of one, no longer ends
+  the broadcast when the connection is reconnecting.
+- A programme or holding encoder pausing for up to five seconds (for example a
+  busy GPU) no longer ends the broadcast; the limit was two seconds.
+- Return Live tolerates up to one second of missing audio at the switch point
+  (filled with silence) instead of 250 ms.
+- New **Emergency Dump** hotkey (no confirmation). Hotkey bindings are now
+  kept after restarting OBS.
+- Switching profile loads that profile's dock settings and destinations.
+  Switching scene collection while armed ends the broadcast with a clear
+  message instead of an unexplained failure.
+- OBS **Start Streaming** pressed while the dock is broadcasting is stopped
+  automatically, since it would bypass the delay.
+- The Primary destination row shows live status in single-destination mode.
+- The holding encoder uses the x264 `superfast` preset to save CPU.
+
 ## v0.2.0-alpha1
 
 First alpha of the reworked pipeline. Tested against local RTMP servers only.

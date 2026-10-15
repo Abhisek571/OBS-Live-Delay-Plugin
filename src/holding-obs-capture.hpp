@@ -6,6 +6,9 @@ namespace active_delay {
 struct ObsHoldingConfig {
 	std::string scene_name;
 	std::string video_encoder_id = "obs_x264";
+	// The holding encoder runs from Arm to End even when never shown; a holding
+	// card is mostly static, so a lighter x264 preset costs nothing visible.
+	std::string video_preset = "superfast";
 	std::string audio_encoder_id = "ffmpeg_aac";
 	uint32_t video_bitrate_kbps = 2500;
 	uint32_t audio_bitrate_kbps = 128;

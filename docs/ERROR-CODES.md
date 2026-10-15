@@ -54,7 +54,7 @@ receive a new code rather than repurposing an existing one.
 | `ALD-E3002` | RTMP connection failed | Check network and service reachability; keep credentials private. |
 | `ALD-E3003` | RTMP write failed | The connected server stopped accepting FLV data. |
 | `ALD-E3004` | Sender startup failed | The RTMP sender could not start or complete its initial connection. |
-| `ALD-E3005` | Sender queue full | Network delivery cannot keep up with the bounded queue. |
+| `ALD-E3005` | Sender queue full | Network delivery cannot keep up even after dropping video; the bounded queue is full of audio. |
 | `ALD-E3006` | Reconnect exhausted | RTMP reconnection attempts were exhausted. |
 | `ALD-E3007` | Secondary target failed | The primary can keep streaming. Check the named secondary's reachability and private configuration. |
 | `ALD-E4001` | Output stopped unexpectedly | Plugin-owned output stopped outside the requested workflow. |

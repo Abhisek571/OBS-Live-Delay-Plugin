@@ -36,6 +36,7 @@ struct SenderStatus {
 	std::uint64_t acknowledged_epoch = 0;
 	std::uint64_t published_epoch = 0;
 	std::uint64_t delivered_epoch = 0, delivery_ticket = 0;
+	std::uint64_t dropped_video_tags = 0;
 };
 
 // Factories allocate a fresh transport; they must not perform network I/O.
@@ -76,6 +77,10 @@ private:
 	bool reconnect(std::string &error);
 	void fail(std::string error) noexcept;
 	[[nodiscard]] bool stop_requested() const noexcept;
+	void acknowledge_dropped_locked() noexcept;
+	void reset_congestion_locked() noexcept;
+	void shed_queued_video_locked() noexcept;
+	void thin_incoming_video_locked(std::vector<FlvTag> &tags) noexcept;
 
 	RtmpConnectionFactory factory_;
 	SenderConfig config_;
@@ -93,6 +98,12 @@ private:
 	std::uint64_t acknowledged_epoch_ = 0;
 	std::uint64_t published_epoch_ = 0;
 	std::uint64_t delivered_epoch_ = 0, delivery_ticket_ = 0;
+	// Highest ticket this epoch has handed in, whether queued or dropped.
+	std::uint64_t enqueued_ticket_ = 0;
+	// Ticket of dropped congestion video, waiting for the next kept tag.
+	std::uint64_t carried_ticket_ = 0;
+	bool drop_video_until_keyframe_ = false;
+	std::atomic<std::uint64_t> dropped_video_tags_ = 0;
 	bool writing_ = false;
 	bool transition_cancelled_transport_ = false;
 	bool resume_after_transition_ = false;

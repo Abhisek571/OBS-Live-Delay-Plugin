@@ -26,8 +26,11 @@ public:
 	void stop() noexcept override;
 	[[nodiscard]] SenderStatus status() const;
 	bool boundary_delivered(std::uint64_t epoch) const override { return sender_.status().published_epoch >= epoch; }
+	// A reconnecting sender acknowledges the media it drops, so a transition
+	// never waits on a connection that is being replaced.
 	bool delivered(std::uint64_t epoch, std::uint64_t ticket) const override {
-	 const auto s=sender_.status();return s.state==SenderState::Running && s.delivered_epoch==epoch && s.delivery_ticket>=ticket;
+	 const auto s=sender_.status();
+	 return (s.state==SenderState::Running || s.state==SenderState::Reconnecting) && s.delivered_epoch==epoch && s.delivery_ticket>=ticket;
 	}
 
 private:

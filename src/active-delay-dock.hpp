@@ -34,6 +34,7 @@ public:
 	void enable_delay();
 	void return_live();
 	void emergency_dump();
+	void emergency_dump_now();
 	void handle_frontend_event(obs_frontend_event event);
 	void shutdown();
 
@@ -51,6 +52,8 @@ private:
 	void refresh_scenes();
 	void refresh_status();
 	void load_multistream_settings();
+	void load_delay_settings();
+	void save_delay_settings();
 	bool save_multistream_settings(const MultistreamConfiguration &configuration, QString &error);
 	[[nodiscard]] MultistreamConfiguration multistream_configuration_from_cards() const;
 	bool configure_multistream_mode(QString &error);
