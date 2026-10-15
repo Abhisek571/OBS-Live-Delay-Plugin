@@ -13,6 +13,9 @@ namespace {
 // Above the coordinator's two-second transition burst, so only an uplink that
 // keeps falling behind sheds video.
 constexpr std::uint32_t kCongestionDropMs = 3'000;
+// A transition cuts an in-flight write only if it is still blocked this long;
+// cutting a prompt one would force a reconnect for nothing.
+constexpr std::chrono::milliseconds kTransitionWriteGrace{1'000};
 } // namespace
 
 RtmpSender::RtmpSender(RtmpConnectionFactory factory, SenderConfig config)
@@ -196,25 +199,23 @@ void RtmpSender::thin_incoming_video_locked(std::vector<FlvTag> &tags) noexcept
 
 void RtmpSender::invalidate_epoch(std::uint64_t epoch) noexcept
 {
-	std::shared_ptr<IRtmpConnection> interrupt;
-	{
-		std::scoped_lock lock(mutex_);
-		if (epoch <= epoch_)
-			return;
-		epoch_ = epoch;
-		reset_congestion_locked();
-		queue_.discard_pending();
-		// No source remains selected until the coordinator supplies its boundary.
-		sequence_headers_.clear();
-		++header_revision_;
-		if (writing_) {
-			transition_cancelled_transport_ = true;
-			interrupt = connection_;
-		} else
-			acknowledged_epoch_ = epoch;
-	}
-	if (interrupt)
-		interrupt->interrupt();
+	std::scoped_lock lock(mutex_);
+	if (epoch <= epoch_)
+		return;
+	epoch_ = epoch;
+	reset_congestion_locked();
+	queue_.discard_pending();
+	// No source remains selected until the coordinator supplies its boundary.
+	sequence_headers_.clear();
+	++header_revision_;
+	if (writing_) {
+		// A prompt write just finishes and the epoch check stops stale media
+		// after it; only a write still blocked after the grace period is cut.
+		// Armed under the lock so a write that already finished disarms it.
+		transition_cancelled_transport_ = true;
+		connection_->interrupt_after(kTransitionWriteGrace);
+	} else
+		acknowledged_epoch_ = epoch;
 }
 
 void RtmpSender::request_stop() noexcept
@@ -414,7 +415,7 @@ bool RtmpSender::connect_and_prime(std::string &error)
  bool connected = false;
  try { connected = connection_->connect(target_, error); }
  catch (...) { std::scoped_lock lock(mutex_); writing_ = false; acknowledged_epoch_ = epoch_; throw; }
- { std::scoped_lock lock(mutex_); writing_ = false; acknowledged_epoch_ = epoch_; }
+ { std::scoped_lock lock(mutex_); writing_ = false; acknowledged_epoch_ = epoch_; if (connected) keep_transport_locked(); }
  if (!connected) return false;
  const auto file_header = make_flv_header();
  if (!send_bytes(file_header, {}, error)) { close_transport(); return false; }
@@ -465,10 +466,22 @@ bool RtmpSender::send_bytes(std::span<const std::uint8_t> bytes, std::optional<s
 		std::scoped_lock lock(mutex_);
 		writing_ = false;
 		acknowledged_epoch_ = epoch_;
+		if (sent)
+			keep_transport_locked();
 	}
 	if (sent)
 		sent_bytes_.fetch_add(bytes.size(), std::memory_order_relaxed);
 	return sent;
+}
+
+void RtmpSender::keep_transport_locked() noexcept
+{
+	// The I/O a transition caught finished within its grace period, so this
+	// connection is intact: keep it instead of reconnecting.
+	if (transition_cancelled_transport_) {
+		transition_cancelled_transport_ = false;
+		connection_->clear_interrupt_after();
+	}
 }
 
 void RtmpSender::close_transport() noexcept

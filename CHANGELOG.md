@@ -17,6 +17,9 @@ with `v0.2.0-alpha1`.
   continues. Destination rows show a `dropped video` count.
 - An Emergency Dump, or a network drop in the middle of one, no longer ends
   the broadcast when the connection is reconnecting.
+- Start Delay, Return Live and Emergency Dump no longer force a reconnect when
+  they land while a frame is being sent (about one switch in twenty in a real
+  OBS test). Only a send still blocked after one second is cut.
 - A programme or holding encoder pausing for up to five seconds (for example a
   busy GPU) no longer ends the broadcast; the limit was two seconds.
 - Return Live tolerates up to one second of missing audio at the switch point

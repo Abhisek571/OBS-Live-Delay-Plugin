@@ -65,6 +65,11 @@ struct FakeState {
 	bool hold_write = false;
 	bool write_entered = false;
 	bool throw_connect = false;
+	// Grace-period cancellation like the FFmpeg transport, instead of the
+	// default immediate interrupt.
+	bool soft_cancel = false;
+	bool soft_armed = false;
+	bool soft_cleared = false;
 };
 
 class FakeConnection final : public IRtmpConnection {
@@ -123,6 +128,25 @@ public:
 		std::scoped_lock lock(state_->mutex);
 		state_->interrupted = true;
 		state_->changed.notify_all();
+	}
+
+	void interrupt_after(std::chrono::milliseconds) noexcept override
+	{
+		{
+			std::scoped_lock lock(state_->mutex);
+			if (state_->soft_cancel) {
+				state_->soft_armed = true;
+				return;
+			}
+		}
+		interrupt();
+	}
+
+	void clear_interrupt_after() noexcept override
+	{
+		std::scoped_lock lock(state_->mutex);
+		if (state_->soft_cancel)
+			state_->soft_cleared = true;
 	}
 
 	void close() noexcept override
@@ -806,6 +830,58 @@ void congestion_sheds_video_until_a_keyframe_and_keeps_audio()
 		state->writes[8] == serialize_flv_tag(at(audio(0x18), 4100)),
 		"all audio must survive while video resumes only at a keyframe");
 }
+
+void transition_lets_a_prompt_write_finish_on_the_same_connection()
+{
+	auto state = std::make_shared<FakeState>();
+	state->soft_cancel = true;
+	RtmpSender sender([state] { return std::make_unique<FakeConnection>(state); },
+		{{16, 4'096}, 2, 1ms, 5s});
+	std::string error;
+	require(sender.start({"rtmp://localhost/live", "test"}, headers(), {}, error), "fake sender should start");
+	wait_until_running(sender);
+	{
+		std::scoped_lock lock(state->mutex);
+		state->hold_write = true;
+	}
+	require(sender.enqueue_epoch({video(true, 0x60)}, 1, {}, error), "programme keyframe should queue");
+	{
+		std::unique_lock lock(state->mutex);
+		require(state->changed.wait_for(lock, 2s, [&] { return state->write_entered; }), "the write should be in flight");
+	}
+	// Start Delay lands while that frame is still on the wire, then it completes.
+	sender.invalidate_epoch(2);
+	{
+		std::scoped_lock lock(state->mutex);
+		state->hold_write = false;
+		state->changed.notify_all();
+	}
+	auto key = video(true, 0x61);
+	key.delivery_ticket = 3;
+	require(sender.enqueue_epoch({key, audio(0x62)}, 2, headers(), error), "the new epoch should queue");
+	require(wait_for_writes(state, 8), "the new epoch should be delivered");
+	const auto deadline = std::chrono::steady_clock::now() + 2s;
+	while (std::chrono::steady_clock::now() < deadline && sender.status().delivery_ticket < 3)
+		std::this_thread::sleep_for(1ms);
+	const auto status = sender.status();
+	bool cut, armed, cleared;
+	std::size_t connects;
+	{
+		std::scoped_lock lock(state->mutex);
+		cut = state->interrupted;
+		armed = state->soft_armed;
+		cleared = state->soft_cleared;
+		connects = state->connects;
+	}
+	sender.stop();
+	require(armed && cleared && !cut, "a prompt write must get its grace period, then be disarmed, never cut");
+	require(connects == 1 && status.reconnect_count == 0 && status.state == SenderState::Running,
+		"a transition must not replace a connection whose write finished");
+	require(status.delivered_epoch == 2 && status.delivery_ticket == 3, "the new epoch must be delivered on the same connection");
+	std::scoped_lock lock(state->mutex);
+	require(state->writes.size() == 8 && state->writes[6] == serialize_flv_tag(video(true, 0x61)) &&
+		state->writes[7] == serialize_flv_tag(audio(0x62)), "the new epoch must follow the finished write");
+}
 } // namespace
 
 int main()
@@ -832,6 +908,7 @@ int main()
 		transition_reconnect_keeps_the_new_epoch_guard();
 		network_loss_during_a_guard_reconnects_and_acknowledges_it();
 		congestion_sheds_video_until_a_keyframe_and_keeps_audio();
+		transition_lets_a_prompt_write_finish_on_the_same_connection();
 		std::cout << "RTMP sender tests passed\n";
 	} catch (const std::exception &error) {
 		std::cerr << "RTMP sender test failure: " << error.what() << '\n';

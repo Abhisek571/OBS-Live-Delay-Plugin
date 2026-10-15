@@ -78,6 +78,7 @@ private:
 	void fail(std::string error) noexcept;
 	[[nodiscard]] bool stop_requested() const noexcept;
 	void acknowledge_dropped_locked() noexcept;
+	void keep_transport_locked() noexcept;
 	void reset_congestion_locked() noexcept;
 	void shed_queued_video_locked() noexcept;
 	void thin_incoming_video_locked(std::vector<FlvTag> &tags) noexcept;
